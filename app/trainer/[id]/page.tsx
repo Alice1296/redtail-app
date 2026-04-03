@@ -6,9 +6,11 @@ import { useParams } from 'next/navigation'
 export default function TrainerPage() {
   const { id } = useParams()
 
+  // Stati per la navigazione
   const [week, setWeek] = useState(1)
   const [activeDay, setActiveDay] = useState('monday')
 
+  // Stati per il programma (quello che scrive il coach)
   const [form, setForm] = useState({
     mobility: '',
     strength: '',
@@ -16,9 +18,12 @@ export default function TrainerPage() {
     coach_notes: ''
   })
 
+  // Stati per i log dell'atleta (quello che riceve il coach)
+  const [logs, setLogs] = useState<any>({})
+  
+  // Stati di UI
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [logs, setLogs] = useState<any>({})
 
   const days = [
     { k: 'monday', l: 'LUN' }, { k: 'tuesday', l: 'MAR' },
@@ -27,6 +32,7 @@ export default function TrainerPage() {
     { k: 'sunday', l: 'DOM' }
   ]
 
+  // Effetto: Ricarica tutto quando cambiano atleta, settimana o giorno
   useEffect(() => {
     if (id) {
       loadWorkout()
@@ -34,6 +40,7 @@ export default function TrainerPage() {
     }
   }, [id, week, activeDay])
 
+  // Carica il programma scritto dal coach
   async function loadWorkout() {
     setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
     const { data } = await supabase
@@ -54,8 +61,9 @@ export default function TrainerPage() {
     }
   }
 
+  // Carica i feedback lasciati dall'atleta
   async function loadLogs() {
-    setLogs({}) 
+    setLogs({}) // Reset per evitare di vedere feedback del giorno precedente
     const { data } = await supabase
       .from('client_logs')
       .select('*')
@@ -65,13 +73,14 @@ export default function TrainerPage() {
     
     const map: any = {}
     data?.forEach(l => {
-      // CHIAVE UNIVOCA IDENTICA AL CLIENT
+      // Chiave univoca identica a quella usata nel Client
       const key = `${l.day}-${l.week_number}-${l.section}`
       map[key] = l
     })
     setLogs(map)
   }
 
+  // Salva il programma nel database
   async function saveWorkout() {
     setLoading(true)
     const { data: existing } = await supabase
@@ -82,39 +91,45 @@ export default function TrainerPage() {
       .eq('day', activeDay)
       .maybeSingle()
 
+    const payload = {
+      client_id: id,
+      week_number: week,
+      day: activeDay,
+      ...form
+    }
+
     if (existing) {
       await supabase.from('workouts').update(form).eq('id', existing.id)
     } else {
-      await supabase.from('workouts').insert([{
-        client_id: id,
-        week_number: week,
-        day: activeDay,
-        ...form
-      }])
+      await supabase.from('workouts').insert([payload])
     }
+    
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans">
+    <div className="min-h-screen bg-black text-white font-sans pb-32">
+      {/* HEADER */}
       <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50">
-        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter text-center">Pannello Coach</h1>
+        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter text-center">
+          Pannello Coach
+        </h1>
       </div>
 
       {/* SELETTORE SETTIMANA */}
       <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
         <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
         <div className="text-center">
-          <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest">Settimana</span>
+          <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest leading-none">Settimana</span>
           <span className="text-xl font-black italic text-red-500 leading-none">{week}</span>
         </div>
         <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl font-bold">›</button>
       </div>
 
       {/* SELETTORE GIORNI */}
-      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar shadow-inner">
+      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar shadow-inner sticky top-[68px] z-40">
         {days.map(d => (
           <button
             key={d.k}
@@ -130,10 +145,11 @@ export default function TrainerPage() {
         ))}
       </div>
 
-      <div className="p-4 space-y-8 max-w-xl mx-auto pb-32">
+      {/* FORM PROGRAMMAZIONE + LOG ATLETA */}
+      <div className="p-4 space-y-8 max-w-xl mx-auto">
         {['mobility', 'strength', 'wod'].map((section) => {
-          // GENERIAMO LA CHIAVE PER RECUPERARE IL FEEDBACK SPECIFICO
           const logKey = `${activeDay}-${week}-${section}`;
+          const athleteLog = logs[logKey];
           
           return (
             <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
@@ -145,25 +161,29 @@ export default function TrainerPage() {
               <textarea
                 value={(form as any)[section]}
                 onChange={e => setForm({ ...form, [section]: e.target.value })}
-                placeholder={`Definisci l'allenamento...`}
-                className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all text-sm placeholder:text-zinc-800"
+                placeholder={`Inserisci esercizi e istruzioni per ${section}...`}
+                className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all text-sm placeholder:text-zinc-800 leading-relaxed"
               />
               
-              {/* FEEDBACK DELL'ATLETA (COLLEGATO AL GIORNO SPECIFICO) */}
-              {logs[logKey] && (
-                <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
-                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
+              {/* BOX FEEDBACK ATLETA */}
+              {athleteLog && (
+                <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
+                  </div>
                   
-                  {logs[logKey].notes && (
-                    <p className="text-sm text-zinc-200 italic leading-relaxed">"{logs[logKey].notes}"</p>
+                  {athleteLog.notes && (
+                    <p className="text-sm text-zinc-200 italic leading-relaxed">
+                      "{athleteLog.notes}"
+                    </p>
                   )}
                   
-                  {logs[logKey].video_url && (
-                    <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl bg-black">
+                  {athleteLog.video_url && (
+                    <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl bg-black aspect-video relative group">
                       <video 
-                        src={logs[logKey].video_url} 
+                        src={athleteLog.video_url} 
                         controls 
-                        className="w-full aspect-video" 
+                        className="w-full h-full" 
                       />
                     </div>
                   )}
@@ -173,10 +193,12 @@ export default function TrainerPage() {
           )
         })}
 
+        {/* SALVATAGGIO FISSO IN BASSO */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 z-[100]">
            <button
             onClick={saveWorkout}
-            className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/40 active:scale-95"
+            disabled={loading}
+            className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/40 active:scale-95 disabled:opacity-50"
           >
             {loading ? 'Salvataggio...' : saved ? '✓ Programma Salvato' : 'Salva Programma'}
           </button>
