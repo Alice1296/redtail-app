@@ -26,10 +26,14 @@ export default function ClientPage() {
 
   async function loadData(userId: string) {
     setLoading(true)
+    setLogs({}) // Reset preventivo per evitare ghosting di dati
+    
+    // Carica il programma del coach
     const { data: wData } = await supabase.from('workouts').select('*')
       .eq('client_id', userId).eq('week_number', Number(week)).eq('day', activeDay).maybeSingle()
     setWorkout(wData)
 
+    // Carica i feedback dell'atleta (solo i suoi)
     const { data: lData } = await supabase.from('client_logs').select('*')
       .eq('client_id', userId).eq('week_number', Number(week)).eq('day', activeDay)
 
@@ -50,8 +54,7 @@ export default function ClientPage() {
       video_url: videoUrl || logs[section]?.video_url || null
     }, { onConflict: 'client_id,week_number,day,section' })
 
-    if (error) console.error("Errore salvataggio:", error.message)
-    else loadData(user.id)
+    if (!error) loadData(user.id)
   }
 
   async function handleVideoUpload(section: string, file: File) {
@@ -62,34 +65,48 @@ export default function ClientPage() {
       if (upErr) throw upErr
       const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName)
       await saveFeedback(section, logs[section]?.notes || '', publicUrl)
-    } catch (err: any) { alert(err.message) } 
+    } catch (err: any) { alert("Upload fallito: " + err.message) } 
     finally { setUploadingSection(null) }
   }
 
   return (
     <div className="min-h-screen bg-black text-white pb-32">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase">My Training</div>
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase">Training Log</div>
+      
+      {/* Selettore Settimana */}
       <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
         <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
         <div className="text-center"><span className="block text-[10px] text-zinc-500 uppercase font-black">Week</span><span className="text-xl font-black text-red-500 italic">{week}</span></div>
         <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl font-bold">›</button>
       </div>
-      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40">
+
+      {/* Selettore Giorno */}
+      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar">
         {days.map(d => (
-          <button key={d.k} onClick={() => setActiveDay(d.k)} className={`flex-1 min-w-[50px] py-3 rounded-xl font-black text-[10px] border ${activeDay === d.k ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>{d.l}</button>
+          <button key={d.k} onClick={() => setActiveDay(d.k)} className={`flex-1 min-w-[50px] py-3 rounded-xl font-black text-[10px] border transition-all ${activeDay === d.k ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>{d.l}</button>
         ))}
       </div>
+
+      {/* Contenuto Workout */}
       <div className="p-4 space-y-8 max-w-xl mx-auto">
-        {loading ? <p className="text-center animate-pulse text-zinc-500 font-black italic uppercase">Loading...</p> : 
+        {loading ? <p className="text-center animate-pulse text-zinc-500 font-black italic uppercase mt-10">Caricamento...</p> : 
          workout ? ['mobility', 'strength', 'wod'].map((s) => workout[s] && (
-          <div key={s} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
+          <div key={s} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl transition-all">
             <label className="text-red-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2"><div className="w-1.5 h-4 bg-red-600 rounded-full" />{s}</label>
-            <div className="bg-black/50 border border-zinc-800 p-4 rounded-2xl text-sm whitespace-pre-wrap">{workout[s]}</div>
+            <div className="bg-black/50 border border-zinc-800 p-4 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed">{workout[s]}</div>
+            
             <div className="pt-4 border-t border-zinc-800/50 space-y-4">
-               <textarea value={logs[s]?.notes || ''} onChange={(e) => setLogs({...logs, [s]: {...logs[s], notes: e.target.value}})} onBlur={(e) => saveFeedback(s, e.target.value)} placeholder="Note, chili, sensazioni..." className="w-full bg-black border border-zinc-800 p-4 rounded-xl text-xs outline-none focus:border-green-600 min-h-[80px]" />
+               <textarea 
+                  value={logs[s]?.notes || ''} 
+                  onChange={(e) => setLogs({...logs, [s]: {...logs[s], notes: e.target.value}})} 
+                  onBlur={(e) => saveFeedback(s, e.target.value)} 
+                  placeholder="Note, chili, sensazioni..." 
+                  className="w-full bg-black border border-zinc-800 p-4 rounded-xl text-xs outline-none focus:border-green-600 min-h-[80px]" 
+               />
+               
                <input type="file" accept="video/*" id={`v-${s}`} className="hidden" onChange={(e) => e.target.files?.[0] && handleVideoUpload(s, e.target.files[0])} />
-               <label htmlFor={`v-${s}`} className={`w-full flex items-center justify-center p-3 rounded-xl border border-zinc-800 text-[10px] font-black uppercase cursor-pointer ${logs[s]?.video_url ? 'bg-green-600/10 border-green-600 text-green-500' : 'bg-zinc-800 text-zinc-400'}`}>
-                 {uploadingSection === s ? 'Uploading...' : logs[s]?.video_url ? '✅ Video Caricato' : '📤 Carica Video'}
+               <label htmlFor={`v-${s}`} className={`w-full flex items-center justify-center p-3 rounded-xl border border-zinc-800 text-[10px] font-black uppercase cursor-pointer transition-all ${logs[s]?.video_url ? 'bg-green-600/10 border-green-600 text-green-500' : 'bg-zinc-800 text-zinc-400'}`}>
+                 {uploadingSection === s ? 'Caricamento...' : logs[s]?.video_url ? '✅ Video Caricato' : '📤 Carica Video'}
                </label>
             </div>
           </div>
