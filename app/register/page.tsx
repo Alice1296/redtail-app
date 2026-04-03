@@ -14,9 +14,8 @@ export default function RegisterPage() {
     setLoading(true)
     setMessage('')
     
-    // 1. Registrazione su Supabase Auth
-    // Il Trigger SQL che abbiamo creato su Supabase si attiverà DA SOLO
-    // e creerà la riga nella tabella 'profiles'.
+    // 1. Eseguiamo SOLO il signUp. 
+    // Il Trigger SQL su Supabase creerà automaticamente la riga in 'profiles'.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -25,8 +24,8 @@ export default function RegisterPage() {
     if (error) {
       setMessage(`Errore: ${error.message}`)
     } else {
-      setMessage("Registrazione completata! Verrai reindirizzato al login...")
-      // Aspettiamo 2 secondi per far vedere il messaggio e poi torniamo in home
+      setMessage("Registrazione completata! Reindirizzamento...")
+      // Piccola attesa e poi torniamo alla home per il login
       setTimeout(() => {
         window.location.href = '/'
       }, 2000)
@@ -35,35 +34,38 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 font-sans">
       <div className="w-full max-w-sm space-y-8 bg-zinc-900 p-8 rounded-3xl border border-zinc-800 shadow-2xl">
         <div className="text-center">
-           <Image src="/logo.png" alt="Logo" width={60} height={60} className="mx-auto mb-4" />
-           <h2 className="text-2xl font-black uppercase italic text-red-500">Unisciti al Program</h2>
+           <Image src="/logo.png" alt="Logo" width={80} height={80} className="mx-auto mb-4" />
+           <h2 className="text-2xl font-black uppercase italic text-red-500 tracking-tighter">
+             Unisciti al Program
+           </h2>
         </div>
 
         <form onSubmit={handleRegister} className="space-y-4">
           <input
             type="email"
             placeholder="La tua Email"
-            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all"
+            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
             onChange={(e) => setEmail(e.target.value)}
             required
           />
           <input
             type="password"
-            placeholder="Scegli una Password"
+            placeholder="Password (min. 6 caratteri)"
             className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
             onChange={(e) => setPassword(e.target.value)}
             required
           />
           <button
             disabled={loading}
-            className="w-full bg-red-600 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50"
+            className="w-full bg-red-600 py-4 rounded-xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-600/20"
           >
             {loading ? 'Creazione...' : 'Registrati'}
           </button>
         </form>
+        
         {message && (
           <p className="text-center text-xs font-bold text-zinc-400 mt-4 animate-pulse">
             {message}
