@@ -6,57 +6,91 @@ import { useRouter } from 'next/navigation'
 export default function TrainerClientsPage() {
   const [clients, setClients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
-    checkUserAndLoadClients()
+    checkUserAndLoad()
   }, [])
 
-  async function checkUserAndLoadClients() {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    // Se non sei loggato, torna alla home
-    if (!user) {
-      router.push('/')
-      return
+  async function checkUserAndLoad() {
+    try {
+      setLoading(true)
+      
+      // 1. Verifica se l'utente è loggato
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/')
+        return
+      }
+
+      // 2. Carica i profili senza filtri stringenti (evita l'Error 400)
+      const { data, error: dbError } = await supabase
+        .from('profiles')
+        .select('id, email, name')
+        .order('email', { ascending: true })
+
+      if (dbError) throw dbError
+
+      setClients(data || [])
+    } catch (err: any) {
+      console.error("Errore Redtail:", err.message)
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
-
-    // Carichiamo i profili (quelli creati dal trigger SQL)
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    setClients(data || [])
-    setLoading(false)
   }
 
-  if (loading) return <div className="min-h-screen bg-black text-red-500 flex items-center justify-center font-black uppercase italic">Loading Redtail...</div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <p className="text-red-500 font-black uppercase italic animate-pulse">Caricamento Atleti...</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      <h1 className="text-2xl font-black text-red-500 mb-6 uppercase italic tracking-tighter">
-        Atleti Redtail
-      </h1>
+    <div className="min-h-screen bg-black text-white p-6 font-sans">
+      <div className="max-w-md mx-auto">
+        <h1 className="text-3xl font-black text-red-600 mb-8 uppercase italic tracking-tighter border-b-2 border-red-600 pb-2">
+          Atleti Redtail
+        </h1>
 
-      <div className="grid gap-4">
-        {clients.length > 0 ? clients.map(c => (
-          <div
-            key={c.id}
-            onClick={() => router.push(`/trainer/${c.id}`)}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 cursor-pointer hover:border-red-600 hover:bg-zinc-800/50 transition-all group"
-          >
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="font-black text-lg group-hover:text-red-500 transition-colors uppercase italic">{c.email.split('@')[0]}</p>
-                <p className="text-xs text-zinc-500 font-medium">{c.email}</p>
-              </div>
-              <div className="text-red-600 font-bold">→</div>
-            </div>
+        {error && (
+          <div className="bg-red-900/20 border border-red-600 p-4 rounded-xl mb-6 text-red-500 text-xs">
+            Errore: {error}
           </div>
-        )) : (
-          <p className="text-zinc-600 font-bold uppercase italic">Nessun atleta registrato.</p>
         )}
+
+        <div className="space-y-4">
+          {clients.length > 0 ? (
+            clients.map(c => (
+              <div
+                key={c.id}
+                onClick={() => router.push(`/trainer/${c.id}`)}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 cursor-pointer hover:border-red-600 hover:bg-zinc-800/50 transition-all flex justify-between items-center group shadow-xl"
+              >
+                <div>
+                  <p className="font-black text-lg uppercase italic group-hover:text-red-500 transition-colors">
+                    {/* Se il nome è null, mostra la parte prima della @ dell'email */}
+                    {c.name || c.email?.split('@')[0] || 'Atleta Anonimo'}
+                  </p>
+                  <p className="text-xs text-zinc-500 font-mono">{c.email}</p>
+                </div>
+                <div className="bg-zinc-800 group-hover:bg-red-600 p-2 rounded-full transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-20 border border-dashed border-zinc-800 rounded-3xl">
+              <p className="text-zinc-600 font-black uppercase italic">Nessun atleta registrato</p>
+              <p className="text-[10px] text-zinc-700 mt-2">Verifica la tabella 'profiles' su Supabase</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
