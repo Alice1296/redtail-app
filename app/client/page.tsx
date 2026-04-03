@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useRouter } from 'next/navigation'
 
 export default function ClientPage() {
   const [user, setUser] = useState<any>(null)
@@ -10,6 +11,7 @@ export default function ClientPage() {
   const [logs, setLogs] = useState<any>({}) 
   const [loading, setLoading] = useState(true)
   const [uploadingSection, setUploadingSection] = useState<string | null>(null)
+  const router = useRouter()
 
   const days = [
     { k: 'monday', l: 'LUN' }, { k: 'tuesday', l: 'MAR' }, { k: 'wednesday', l: 'MER' },
@@ -22,6 +24,8 @@ export default function ClientPage() {
       if (user) { 
         setUser(user)
         loadData(user.id) 
+      } else {
+        router.push('/')
       }
     }
     init()
@@ -29,7 +33,7 @@ export default function ClientPage() {
 
   async function loadData(userId: string) {
     setLoading(true)
-    setLogs({}) // Pulisce lo stato per evitare di vedere video del giorno precedente
+    setLogs({})
     
     const { data: wData } = await supabase.from('workouts').select('*')
       .eq('client_id', userId).eq('week_number', Number(week)).eq('day', activeDay).maybeSingle()
@@ -47,7 +51,7 @@ export default function ClientPage() {
   async function saveFeedback(section: string, notes: string, videoUrl?: string) {
     if (!user) return
     const { error } = await supabase.from('client_logs').upsert({
-      client_id: user.id, // Legame indissolubile con l'utente loggato
+      client_id: user.id,
       week_number: Number(week),
       day: activeDay,
       section: section,
@@ -56,13 +60,13 @@ export default function ClientPage() {
     }, { onConflict: 'client_id,week_number,day,section' })
 
     if (!error) loadData(user.id)
-    else console.error("Errore salvataggio:", error.message)
   }
 
   async function handleVideoUpload(section: string, file: File) {
+    if (!user) return
     try {
       setUploadingSection(section)
-      // Creiamo una cartella per l'utente nello storage: ID_UTENTE/timestamp-sezione.ext
+      // Cartella specifica per utente: ID_UTENTE/timestamp-sezione.ext
       const fileName = `${user.id}/${Date.now()}-${section}.${file.name.split('.').pop()}`
       
       const { error: upErr } = await supabase.storage.from('videos').upload(fileName, file)
@@ -75,27 +79,30 @@ export default function ClientPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white pb-32 font-sans text-[13px]">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase tracking-tighter text-lg">REDTAIL CLIENT</div>
+    <div className="min-h-screen bg-black text-white pb-32">
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase text-lg italic tracking-tighter">REDTAIL CLIENT</div>
       
       <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
         <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
-        <div className="text-center"><span className="block text-[10px] text-zinc-500 uppercase font-black">Settimana</span><span className="text-xl font-black text-red-500 italic">{week}</span></div>
+        <div className="text-center">
+          <span className="block text-[10px] text-zinc-500 uppercase font-black">Settimana</span>
+          <span className="text-xl font-black text-red-500 italic">{week}</span>
+        </div>
         <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl font-bold">›</button>
       </div>
 
       <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
         {days.map(d => (
-          <button key={d.k} onClick={() => setActiveDay(d.k)} className={`flex-1 min-w-[50px] py-3 rounded-xl font-black text-[10px] border transition-all ${activeDay === d.k ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>{d.l}</button>
+          <button key={d.k} onClick={() => setActiveDay(d.k)} className={`flex-1 min-w-[60px] py-3 rounded-xl font-black text-[10px] border transition-all ${activeDay === d.k ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>{d.l}</button>
         ))}
       </div>
 
       <div className="p-4 space-y-8 max-w-xl mx-auto">
-        {loading ? <p className="text-center animate-pulse text-zinc-500 font-black italic uppercase mt-10">Sincronizzazione...</p> : 
+        {loading ? <p className="text-center animate-pulse text-zinc-500 font-black italic uppercase mt-10 tracking-widest">Sincronizzazione...</p> : 
          workout ? ['mobility', 'strength', 'wod'].map((s) => workout[s] && (
           <div key={s} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
-            <label className="text-red-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2"><div className="w-1.5 h-4 bg-red-600 rounded-full" />{s}</label>
-            <div className="bg-black/50 border border-zinc-800 p-4 rounded-2xl whitespace-pre-wrap leading-relaxed text-zinc-200">{workout[s]}</div>
+            <label className="text-red-500 font-black uppercase text-[11px] flex items-center gap-2"><div className="w-1.5 h-4 bg-red-600 rounded-full" />{s}</label>
+            <div className="bg-black/50 border border-zinc-800 p-4 rounded-2xl whitespace-pre-wrap leading-relaxed text-zinc-200 text-sm">{workout[s]}</div>
             
             <div className="pt-4 border-t border-zinc-800/50 space-y-4">
                <textarea 
@@ -111,7 +118,7 @@ export default function ClientPage() {
                </label>
             </div>
           </div>
-        )) : <div className="text-center py-20 text-zinc-600 font-black uppercase italic tracking-widest border border-dashed border-zinc-800 rounded-3xl">Giorno di Riposo</div>}
+        )) : <div className="text-center py-20 text-zinc-600 font-black uppercase italic tracking-widest border border-dashed border-zinc-800 rounded-3xl text-sm">Giorno di Riposo</div>}
       </div>
     </div>
   )
