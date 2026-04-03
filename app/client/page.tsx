@@ -1,24 +1,13 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useParams } from 'next/navigation'
 
-export default function TrainerPage() {
-  const { id } = useParams()
-
+export default function ClientPage() {
+  const [user, setUser] = useState<any>(null)
   const [week, setWeek] = useState(1)
   const [activeDay, setActiveDay] = useState('monday')
-
-  const [form, setForm] = useState({
-    mobility: '',
-    strength: '',
-    wod: '',
-    coach_notes: ''
-  })
-
-  const [loading, setLoading] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [logs, setLogs] = useState<any>({})
+  const [workout, setWorkout] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
   const days = [
     { k: 'monday', l: 'LUN' }, { k: 'tuesday', l: 'MAR' },
@@ -28,81 +17,36 @@ export default function TrainerPage() {
   ]
 
   useEffect(() => {
-    if (id) {
-      loadWorkout()
-      loadLogs()
+    async function getUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUser(user)
+        loadWorkout(user.id)
+      }
     }
-  }, [id, week, activeDay])
+    getUser()
+  }, [week, activeDay])
 
-  async function loadWorkout() {
-    setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
-
-    const { data } = await supabase
-      .from('workouts')
-      .select('*')
-      .eq('client_id', id)
-      .eq('week_number', week)
-      .eq('day', activeDay)
-      .maybeSingle()
-
-    if (data) {
-      setForm({
-        mobility: data.mobility || '',
-        strength: data.strength || '',
-        wod: data.wod || '',
-        coach_notes: data.coach_notes || ''
-      })
-    }
-  }
-
-  async function loadLogs() {
-    const { data } = await supabase
-      .from('client_logs')
-      .select('*')
-      .eq('client_id', id)
-      .eq('week_number', week)
-      .eq('day', activeDay)
-
-    const map: any = {}
-    data?.forEach(l => {
-      // Chiave unica per giorno + sezione
-      const key = `${l.day}-${l.week_number}-${l.section}`
-      map[key] = l
-    })
-
-    setLogs(map)
-  }
-
-  async function saveWorkout() {
+  async function loadWorkout(userId: string) {
     setLoading(true)
-    const { data: existing } = await supabase
+    const { data } = await supabase
       .from('workouts')
-      .select('id')
-      .eq('client_id', id)
+      .select('*')
+      .eq('client_id', userId)
       .eq('week_number', week)
       .eq('day', activeDay)
       .maybeSingle()
-
-    if (existing) {
-      await supabase.from('workouts').update(form).eq('id', existing.id)
-    } else {
-      await supabase.from('workouts').insert([{
-        client_id: id,
-        week_number: week,
-        day: activeDay,
-        ...form
-      }])
-    }
-
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    
+    setWorkout(data)
     setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50">
-        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter text-center">Pannello Coach</h1>
+    <div className="min-h-screen bg-black text-white font-sans pb-20">
+      {/* HEADER ATLETA */}
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-6 sticky top-0 z-50">
+        <p className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.3em] text-center mb-1">Workout Area</p>
+        <h1 className="font-black italic text-2xl text-white uppercase tracking-tighter text-center">Il Tuo Programma</h1>
       </div>
 
       {/* SELETTORE SETTIMANA */}
@@ -123,7 +67,7 @@ export default function TrainerPage() {
             onClick={() => setActiveDay(d.k)}
             className={`flex-1 min-w-[50px] py-3 rounded-xl font-black text-[10px] transition-all border ${
               activeDay === d.k 
-              ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' 
+              ? 'bg-red-600 border-red-500 text-white shadow-lg' 
               : 'bg-zinc-800 border-zinc-700 text-zinc-500'
             }`}
           >
@@ -132,57 +76,29 @@ export default function TrainerPage() {
         ))}
       </div>
 
-      <div className="p-4 space-y-8 max-w-xl mx-auto pb-32">
-        {['mobility', 'strength', 'wod'].map((section) => {
-          const logKey = `${activeDay}-${week}-${section}`;
-          const log = logs[logKey]; // Feedback solo del giorno e sezione corrente
-          
-          return (
-            <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
-                <label className="text-red-500 font-black uppercase text-[11px] tracking-widest">{section}</label>
-              </div>
-              
-              <textarea
-                value={(form as any)[section]}
-                onChange={e => setForm({ ...form, [section]: e.target.value })}
-                placeholder={`Definisci l'allenamento...`}
-                className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all text-sm placeholder:text-zinc-800"
-              />
-
-              {/* FEEDBACK DELL'ATLETA */}
-              {log && (
-                <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
-                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
-                  
-                  {log.notes && (
-                    <p className="text-sm text-zinc-200 italic leading-relaxed">"{log.notes}"</p>
-                  )}
-                  
-                  {log.video_url && (
-                    <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl bg-black">
-                      <video 
-                        src={log.video_url} 
-                        controls 
-                        className="w-full aspect-video" 
-                      />
-                    </div>
-                  )}
+      <div className="p-4 space-y-6 max-w-xl mx-auto">
+        {loading ? (
+          <p className="text-center text-zinc-500 animate-pulse mt-10 uppercase font-black italic">Caricamento...</p>
+        ) : workout ? (
+          ['mobility', 'strength', 'wod'].map((section) => (
+            workout[section] && (
+              <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
+                  <label className="text-red-500 font-black uppercase text-[11px] tracking-widest">{section}</label>
                 </div>
-              )}
-            </div>
-          )
-        })}
-
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 z-[100]">
-          <button
-            onClick={saveWorkout}
-            className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/40 active:scale-95"
-          >
-            {loading ? 'Salvataggio...' : saved ? '✓ Programma Salvato' : 'Salva Programma'}
-          </button>
-        </div>
+                <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed bg-black/40 p-4 rounded-xl border border-zinc-800/50">
+                  {workout[section]}
+                </div>
+              </div>
+            )
+          ))
+        ) : (
+          <div className="text-center py-20 bg-zinc-900/50 rounded-3xl border border-dashed border-zinc-800">
+            <p className="text-zinc-600 font-black uppercase italic tracking-widest text-sm">Nessun allenamento assegnato</p>
+            <p className="text-zinc-800 text-xs mt-2 uppercase">Riposo o contatta il coach</p>
+          </div>
+        )}
       </div>
     </div>
   )
