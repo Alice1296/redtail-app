@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Image from 'next/image'
+import Link from 'next/link' // Aggiunto per il link alla registrazione
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -25,7 +26,6 @@ export default function LoginPage() {
       return
     }
 
-    // Controllo Ruolo e Reindirizzamento
     const user = data.user
     const { data: profile } = await supabase
       .from('profiles')
@@ -45,7 +45,6 @@ export default function LoginPage() {
       
       {/* AREA LOGO E TITOLO */}
       <div className="flex flex-col items-center mb-12 text-center">
-        {/* Assicurati di aver messo logo.png in /public */}
         <Image 
           src="/logo.png" 
           alt="Redtail Logo" 
@@ -62,39 +61,54 @@ export default function LoginPage() {
       </div>
 
       {/* FORM DI LOGIN */}
-      <form onSubmit={handleLogin} className="w-full max-w-sm space-y-4">
-        {error && (
-          <div className="bg-red-900/50 border border-red-700 text-red-200 p-3 rounded-lg text-sm text-center font-bold">
-            {error}
-          </div>
-        )}
+      <div className="w-full max-w-sm space-y-6">
+        <form onSubmit={handleLogin} className="space-y-4">
+          {error && (
+            <div className="bg-red-900/50 border border-red-700 text-red-200 p-3 rounded-lg text-sm text-center font-bold">
+              {error}
+            </div>
+          )}
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
-          required
-        />
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+            required
+          />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
-          required
-        />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+            required
+          />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-red-700 active:scale-95 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50"
-        >
-          {loading ? 'Entrando...' : 'Entra'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-red-700 active:scale-95 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50"
+          >
+            {loading ? 'Entrando...' : 'Entra'}
+          </button>
+        </form>
+
+        {/* --- TASTO REGISTRAZIONE --- */}
+        <div className="text-center pt-4 border-t border-zinc-900">
+          <p className="text-zinc-500 text-xs uppercase font-bold tracking-widest mb-4">
+            Nuovo atleta?
+          </p>
+          <Link 
+            href="/register" 
+            className="inline-block w-full bg-transparent border border-zinc-800 p-4 rounded-xl font-black uppercase italic tracking-widest text-sm text-zinc-400 hover:text-white hover:border-zinc-600 transition-all active:scale-95"
+          >
+            Crea il tuo Account
+          </Link>
+        </div>
+      </div>
 
       <p className="text-xs text-zinc-700 mt-16 font-mono">
         Redtail v1.0 | © 2024
