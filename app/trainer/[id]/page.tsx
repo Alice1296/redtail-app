@@ -35,7 +35,6 @@ export default function TrainerPage() {
   }, [id, week, activeDay])
 
   async function loadWorkout() {
-    // Reset form prima di caricare il nuovo giorno
     setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
     const { data } = await supabase
       .from('workouts')
@@ -56,20 +55,19 @@ export default function TrainerPage() {
   }
 
   async function loadLogs() {
-    // RESET LOGS prima del caricamento per evitare di vedere roba del giorno precedente
     setLogs({}) 
-    
-    // FILTRO FONDAMENTALE: cerchiamo i log solo per questo atleta, questa settimana e questo giorno
     const { data } = await supabase
       .from('client_logs')
       .select('*')
       .eq('client_id', id)
-      .eq('week_number', week) // Sincronizzato con Client
-      .eq('day', activeDay)    // Sincronizzato con Client
+      .eq('week_number', week)
+      .eq('day', activeDay)
     
     const map: any = {}
     data?.forEach(l => {
-      map[l.section] = l
+      // CHIAVE UNIVOCA IDENTICA AL CLIENT
+      const key = `${l.day}-${l.week_number}-${l.section}`
+      map[key] = l
     })
     setLogs(map)
   }
@@ -102,21 +100,21 @@ export default function TrainerPage() {
   return (
     <div className="min-h-screen bg-black text-white font-sans">
       <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50">
-        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter">Programmazione</h1>
+        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter text-center">Pannello Coach</h1>
       </div>
 
       {/* SELETTORE SETTIMANA */}
       <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
-        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl">‹</button>
+        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
         <div className="text-center">
-          <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest leading-none">Settimana</span>
+          <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest">Settimana</span>
           <span className="text-xl font-black italic text-red-500 leading-none">{week}</span>
         </div>
-        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl">›</button>
+        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl font-bold">›</button>
       </div>
 
       {/* SELETTORE GIORNI */}
-      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar shadow-inner">
         {days.map(d => (
           <button
             key={d.k}
@@ -133,47 +131,49 @@ export default function TrainerPage() {
       </div>
 
       <div className="p-4 space-y-8 max-w-xl mx-auto pb-32">
-        {['mobility', 'strength', 'wod'].map((section) => (
-          <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
-              <label className="text-red-500 font-black uppercase text-[11px] tracking-widest">{section}</label>
-            </div>
-            
-            <textarea
-              value={(form as any)[section]}
-              onChange={e => setForm({ ...form, [section]: e.target.value })}
-              placeholder={`Definisci il lavoro per ${section}...`}
-              className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all placeholder:text-zinc-800 text-sm"
-            />
-            
-            {/* VISUALIZZAZIONE LOG CLIENTE (FILTRATI) */}
-            {logs[section] && (
-              <div className="bg-zinc-800/40 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
-                  <span className="text-[9px] text-zinc-500">Appena caricato</span>
-                </div>
-                
-                {logs[section].notes && (
-                  <p className="text-sm text-zinc-200 italic font-medium">"{logs[section].notes}"</p>
-                )}
-                
-                {logs[section].video_url && (
-                  <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl">
-                    <video 
-                      src={logs[section].video_url} 
-                      controls 
-                      className="w-full aspect-video bg-black" 
-                    />
-                  </div>
-                )}
+        {['mobility', 'strength', 'wod'].map((section) => {
+          // GENERIAMO LA CHIAVE PER RECUPERARE IL FEEDBACK SPECIFICO
+          const logKey = `${activeDay}-${week}-${section}`;
+          
+          return (
+            <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
+                <label className="text-red-500 font-black uppercase text-[11px] tracking-widest">{section}</label>
               </div>
-            )}
-          </div>
-        ))}
+              
+              <textarea
+                value={(form as any)[section]}
+                onChange={e => setForm({ ...form, [section]: e.target.value })}
+                placeholder={`Definisci l'allenamento...`}
+                className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all text-sm placeholder:text-zinc-800"
+              />
+              
+              {/* FEEDBACK DELL'ATLETA (COLLEGATO AL GIORNO SPECIFICO) */}
+              {logs[logKey] && (
+                <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
+                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
+                  
+                  {logs[logKey].notes && (
+                    <p className="text-sm text-zinc-200 italic leading-relaxed">"{logs[logKey].notes}"</p>
+                  )}
+                  
+                  {logs[logKey].video_url && (
+                    <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl bg-black">
+                      <video 
+                        src={logs[logKey].video_url} 
+                        controls 
+                        className="w-full aspect-video" 
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/80 backdrop-blur-md border-t border-zinc-800">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 z-[100]">
            <button
             onClick={saveWorkout}
             className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/40 active:scale-95"

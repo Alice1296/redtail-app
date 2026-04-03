@@ -27,7 +27,6 @@ export default function ClientPage() {
     })
   }, [])
 
-  // Ricarica tutto quando cambiano utente, settimana o giorno
   useEffect(() => { 
     if (user) { 
       loadWorkout()
@@ -43,7 +42,6 @@ export default function ClientPage() {
 
   async function loadLogs() {
     if (!user) return
-    // FILTRIAMO PER UTENTE, SETTIMANA E GIORNO
     const { data } = await supabase.from('client_logs')
       .select('*')
       .eq('client_id', user.id)
@@ -51,13 +49,18 @@ export default function ClientPage() {
       .eq('day', activeDay)
     
     const map: any = {}
-    data?.forEach(l => { map[l.section] = l })
+    data?.forEach(l => { 
+      // CHIAVE UNIVOCA: es. "monday-1-strength"
+      const key = `${l.day}-${l.week_number}-${l.section}`
+      map[key] = l 
+    })
     setLogs(map)
   }
 
   async function saveLog(section: string, notes: string) {
     if (!user) return
-    const existing = logs[section]
+    const logKey = `${activeDay}-${week}-${section}`
+    const existing = logs[logKey]
     
     if (existing) {
       await supabase.from('client_logs').update({ notes }).eq('id', existing.id)
@@ -67,8 +70,8 @@ export default function ClientPage() {
         workout_id: workout?.id || null, 
         section, 
         notes,
-        week_number: week, // SALVIAMO LA SETTIMANA
-        day: activeDay      // SALVIAMO IL GIORNO
+        week_number: week,
+        day: activeDay
       }])
     }
     setSaved(true)
@@ -81,19 +84,19 @@ export default function ClientPage() {
     setUploading(section)
     
     const fileExt = file.name.split('.').pop()
-    // Nome file univoco per giorno e settimana
     const fileName = `${user.id}/${section}_w${week}_d${activeDay}_${Date.now()}.${fileExt}`
     
     const { data: upload, error } = await supabase.storage.from('videos').upload(fileName, file)
     
     if (error) {
-      alert("Errore upload: assicurati che il bucket 'videos' sia PUBLIC")
+      alert("Errore upload")
       setUploading(null)
       return
     }
 
     const { data: url } = supabase.storage.from('videos').getPublicUrl(fileName)
-    const existing = logs[section]
+    const logKey = `${activeDay}-${week}-${section}`
+    const existing = logs[logKey]
     
     if (existing) {
       await supabase.from('client_logs').update({ video_url: url.publicUrl }).eq('id', existing.id)
@@ -103,8 +106,8 @@ export default function ClientPage() {
         workout_id: workout?.id || null, 
         section, 
         video_url: url.publicUrl,
-        week_number: week, // SALVIAMO LA SETTIMANA
-        day: activeDay      // SALVIAMO IL GIORNO
+        week_number: week,
+        day: activeDay
       }])
     }
     
@@ -113,27 +116,24 @@ export default function ClientPage() {
   }
 
   async function deleteVideo(section: string) {
-    if (!user || !logs[section]?.video_url) return
+    const logKey = `${activeDay}-${week}-${section}`
+    if (!user || !logs[logKey]?.video_url) return
     
-    const confirmDelete = confirm("Vuoi eliminare definitivamente questo video?")
-    if (!confirmDelete) return
+    if (!confirm("Vuoi eliminare questo video?")) return
 
     setUploading(section)
 
     try {
-      const url = logs[section].video_url
+      const url = logs[logKey].video_url
       const fileName = url.split('/').pop()
       const filePath = `${user.id}/${fileName}`
       
       await supabase.storage.from('videos').remove([filePath])
-
-      await supabase.from('client_logs')
-        .update({ video_url: null })
-        .eq('id', logs[section].id)
+      await supabase.from('client_logs').update({ video_url: null }).eq('id', logs[logKey].id)
 
       loadLogs()
     } catch (err) {
-      console.error("Errore:", err)
+      console.error(err)
     } finally {
       setUploading(null)
     }
@@ -142,127 +142,101 @@ export default function ClientPage() {
   return (
     <div className="min-h-screen bg-black text-white font-sans pb-20">
       
-      {/* HEADER BRANDIZZATO */}
       <div className="sticky top-0 z-50 bg-zinc-900/90 backdrop-blur-md border-b-2 border-red-600 p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Redtail Logo" width={35} height={35} className="object-contain" />
+          <Image src="/logo.png" alt="Logo" width={35} height={35} className="object-contain" />
           <div>
-            <h1 className="font-black italic text-lg text-red-500 uppercase tracking-tighter leading-none">
-              Redtail
-            </h1>
-            <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-zinc-500 leading-none">
-              Program
-            </span>
+            <h1 className="font-black italic text-lg text-red-500 uppercase tracking-tighter leading-none">Redtail</h1>
+            <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-zinc-500 leading-none">Program</span>
           </div>
         </div>
-        <button 
-          onClick={() => supabase.auth.signOut().then(() => window.location.href='/')} 
-          className="bg-zinc-800 hover:bg-red-900/30 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-zinc-400 border border-zinc-700 transition-all"
-        >
+        <button onClick={() => supabase.auth.signOut().then(() => window.location.href='/')} 
+          className="bg-zinc-800 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-zinc-400 border border-zinc-700">
           Esci
         </button>
       </div>
 
-      {/* SELETTORE SETTIMANA */}
       <div className="flex items-center justify-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
-        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl hover:scale-125 transition-transform">‹</button>
+        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl">‹</button>
         <div className="text-center">
-          <span className="block font-black uppercase tracking-widest text-xs">Settimana</span>
+          <span className="block font-black uppercase tracking-widest text-xs text-zinc-500">Settimana</span>
           <span className="text-xl font-black italic text-red-500">{week}</span>
         </div>
-        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl hover:scale-125 transition-transform">›</button>
+        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl">›</button>
       </div>
 
-      {/* SELETTORE GIORNI */}
       <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar">
         {days.map(d => (
           <button key={d.k} onClick={() => setActiveDay(d.k)}
-            className={`flex-1 min-w-[45px] py-3 rounded-xl font-black text-[10px] transition-all border
-              ${activeDay === d.k 
-                ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' 
-                : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
+            className={`flex-1 min-w-[45px] py-3 rounded-xl font-black text-[10px] border transition-all
+              ${activeDay === d.k ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
             {d.l}
           </button>
         ))}
       </div>
 
-      {/* CORPO ALLENAMENTO */}
       <div className="max-w-xl mx-auto p-4 space-y-6">
         {!workout ? (
-          <div className="text-center py-32">
-            <div className="inline-block p-6 rounded-full bg-zinc-900 mb-4 opacity-20">
-              <Image src="/logo.png" alt="Logo" width={60} height={60} className="grayscale" />
-            </div>
-            <p className="font-black uppercase italic text-zinc-700 tracking-widest">Rest Day</p>
-          </div>
+          <div className="text-center py-32 opacity-20 italic font-black uppercase tracking-widest">Rest Day</div>
         ) : (
-          ['mobility', 'strength', 'wod'].map(section => (
-            <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
-              <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
-                <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
-                <p className="text-[11px] font-black text-red-500 uppercase tracking-[0.2em]">{section}</p>
-              </div>
-              
-              <p className="font-bold text-lg leading-tight whitespace-pre-wrap text-zinc-100 italic">
-                {workout[section] || '---'}
-              </p>
-              
-              <div className="space-y-4 pt-4 border-t border-zinc-800/50">
-                <textarea
-                  className="w-full bg-black border border-zinc-800 rounded-2xl p-4 text-sm outline-none focus:border-red-600 transition-all h-24 placeholder:text-zinc-700"
-                  placeholder="Inserisci i tuoi risultati..."
-                  key={`${week}-${activeDay}-${section}`} // Forza reset textarea al cambio giorno
-                  defaultValue={logs[section]?.notes || ''}
-                  onBlur={e => saveLog(section, e.target.value)}
-                />
+          ['mobility', 'strength', 'wod'].map(section => {
+            // GENERIAMO LA CHIAVE PER QUESTA SEZIONE SPECIFICA
+            const logKey = `${activeDay}-${week}-${section}`;
+            
+            return (
+              <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+                  <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
+                  <p className="text-[11px] font-black text-red-500 uppercase tracking-[0.2em]">{section}</p>
+                </div>
                 
-                <div className="flex flex-col gap-3">
-                  <input type="file" accept="video/*" className="hidden"
-                    ref={el => { fileRef.current[section] = el }}
-                    onChange={e => e.target.files?.[0] && uploadVideo(section, e.target.files[0])}
+                <p className="font-bold text-lg leading-tight whitespace-pre-wrap text-zinc-100 italic">
+                  {workout[section] || '---'}
+                </p>
+                
+                <div className="space-y-4 pt-4 border-t border-zinc-800/50">
+                  <textarea
+                    className="w-full bg-black border border-zinc-800 rounded-2xl p-4 text-sm outline-none focus:border-red-600 transition-all h-24"
+                    placeholder="Inserisci i tuoi risultati..."
+                    key={logKey} // IMPORTANTE: resetta la textarea al cambio giorno
+                    defaultValue={logs[logKey]?.notes || ''}
+                    onBlur={e => saveLog(section, e.target.value)}
                   />
                   
-                  {logs[section]?.video_url ? (
-                    <div className="space-y-3">
-                      <div className="relative group">
-                        <video src={logs[section].video_url} controls className="w-full rounded-2xl border-2 border-zinc-800 shadow-lg" />
-                        <button 
-                          onClick={() => deleteVideo(section)}
-                          className="absolute -top-2 -right-2 bg-red-600 text-white w-8 h-8 rounded-full font-black shadow-xl hover:bg-red-700 transition-all flex items-center justify-center border-2 border-black active:scale-90"
-                        >
-                          ✕
+                  <div className="flex flex-col gap-3">
+                    <input type="file" accept="video/*" className="hidden"
+                      ref={el => { fileRef.current[section] = el }}
+                      onChange={e => e.target.files?.[0] && uploadVideo(section, e.target.files[0])}
+                    />
+                    
+                    {logs[logKey]?.video_url ? (
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <video src={logs[logKey].video_url} controls className="w-full rounded-2xl border-2 border-zinc-800 shadow-lg" />
+                          <button onClick={() => deleteVideo(section)}
+                            className="absolute -top-2 -right-2 bg-red-600 text-white w-8 h-8 rounded-full font-black border-2 border-black">✕</button>
+                        </div>
+                        <button onClick={() => fileRef.current[section]?.click()}
+                          className="w-full bg-zinc-800 py-3 rounded-xl text-[10px] font-black uppercase text-zinc-400">
+                          {uploading === section ? 'In corso...' : 'Sostituisci Video'}
                         </button>
                       </div>
-                      
-                      <button 
-                        onClick={() => fileRef.current[section]?.click()}
-                        className="w-full bg-zinc-800 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
-                      >
-                        {uploading === section ? 'In corso...' : 'Sostituisci Video'}
+                    ) : (
+                      <button onClick={() => fileRef.current[section]?.click()}
+                        className="w-full bg-white text-black py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                        {uploading === section ? 'Caricamento...' : <><span>Carica Video</span><span>⊕</span></>}
                       </button>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={() => fileRef.current[section]?.click()}
-                      className="w-full bg-white text-black py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      {uploading === section ? 'Caricamento...' : (
-                        <>
-                          <span>Carica Video</span>
-                          <span className="text-lg">⊕</span>
-                        </>
-                      )}
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
       {saved && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white text-black px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100] animate-bounce">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white text-black px-8 py-3 rounded-full font-black uppercase text-[10px] animate-bounce z-[100]">
           ✓ Dati salvati
         </div>
       )}
