@@ -90,16 +90,17 @@ export default function ClientPage() {
       setUploading(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `${user.id}/${Date.now()}.${fileExt}`
-      const filePath = `videos/${fileName}`
+      const filePath = fileName // Salviamo direttamente nel bucket
 
+      // CORREZIONE: Uso del bucket "videos"
       const { error: uploadError } = await supabase.storage
-        .from('workout-videos')
+        .from('videos')
         .upload(filePath, file)
 
       if (uploadError) throw uploadError
 
       const { data: { publicUrl } } = supabase.storage
-        .from('workout-videos')
+        .from('videos')
         .getPublicUrl(filePath)
 
       await saveFeedback(section, logs[section]?.notes || '', publicUrl)
