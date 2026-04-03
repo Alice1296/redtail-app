@@ -18,7 +18,7 @@ export default function TrainerPage() {
 
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [logs, setLogs] = useState<any>({}) // Cambiato in oggetto per mappare le sezioni
+  const [logs, setLogs] = useState<any>({})
 
   const days = [
     { k: 'monday', l: 'LUN' }, { k: 'tuesday', l: 'MAR' },
@@ -35,6 +35,7 @@ export default function TrainerPage() {
   }, [id, week, activeDay])
 
   async function loadWorkout() {
+    // Reset form prima di caricare il nuovo giorno
     setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
     const { data } = await supabase
       .from('workouts')
@@ -55,11 +56,16 @@ export default function TrainerPage() {
   }
 
   async function loadLogs() {
-    // Carichiamo i log del cliente per questo specifico atleta
+    // RESET LOGS prima del caricamento per evitare di vedere roba del giorno precedente
+    setLogs({}) 
+    
+    // FILTRO FONDAMENTALE: cerchiamo i log solo per questo atleta, questa settimana e questo giorno
     const { data } = await supabase
       .from('client_logs')
       .select('*')
       .eq('client_id', id)
+      .eq('week_number', week) // Sincronizzato con Client
+      .eq('day', activeDay)    // Sincronizzato con Client
     
     const map: any = {}
     data?.forEach(l => {
@@ -95,23 +101,30 @@ export default function TrainerPage() {
 
   return (
     <div className="min-h-screen bg-black text-white font-sans">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4">
-        <h1 className="font-black italic text-xl text-red-500 uppercase">Programmazione</h1>
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50">
+        <h1 className="font-black italic text-xl text-red-500 uppercase tracking-tighter">Programmazione</h1>
       </div>
 
-      <div className="flex justify-center gap-6 p-4 bg-zinc-900">
-        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 font-bold">‹</button>
-        <span className="font-bold uppercase tracking-tighter">Settimana {week}</span>
-        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 font-bold">›</button>
+      {/* SELETTORE SETTIMANA */}
+      <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
+        <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl">‹</button>
+        <div className="text-center">
+          <span className="block text-[10px] font-black uppercase text-zinc-500 tracking-widest leading-none">Settimana</span>
+          <span className="text-xl font-black italic text-red-500 leading-none">{week}</span>
+        </div>
+        <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl">›</button>
       </div>
 
-      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto">
+      {/* SELETTORE GIORNI */}
+      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto no-scrollbar">
         {days.map(d => (
           <button
             key={d.k}
             onClick={() => setActiveDay(d.k)}
-            className={`flex-1 min-w-[50px] py-2 rounded font-black text-xs ${
-              activeDay === d.k ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-500'
+            className={`flex-1 min-w-[50px] py-3 rounded-xl font-black text-[10px] transition-all border ${
+              activeDay === d.k 
+              ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20' 
+              : 'bg-zinc-800 border-zinc-700 text-zinc-500'
             }`}
           >
             {d.l}
@@ -119,36 +132,55 @@ export default function TrainerPage() {
         ))}
       </div>
 
-      <div className="p-4 space-y-8 max-w-xl mx-auto pb-20">
+      <div className="p-4 space-y-8 max-w-xl mx-auto pb-32">
         {['mobility', 'strength', 'wod'].map((section) => (
-          <div key={section} className="space-y-2">
-            <label className="text-red-500 font-black uppercase text-xs tracking-widest">{section}</label>
+          <div key={section} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-4 bg-red-600 rounded-full"></div>
+              <label className="text-red-500 font-black uppercase text-[11px] tracking-widest">{section}</label>
+            </div>
+            
             <textarea
               value={(form as any)[section]}
               onChange={e => setForm({ ...form, [section]: e.target.value })}
-              placeholder={`Scrivi ${section}...`}
-              className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-lg h-32 outline-none focus:border-red-600 transition-all"
+              placeholder={`Definisci il lavoro per ${section}...`}
+              className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 outline-none focus:border-red-600 transition-all placeholder:text-zinc-800 text-sm"
             />
             
-            {/* VISUALIZZAZIONE LOG CLIENTE */}
+            {/* VISUALIZZAZIONE LOG CLIENTE (FILTRATI) */}
             {logs[section] && (
-              <div className="bg-zinc-800/50 border-l-4 border-green-500 p-3 mt-2 rounded-r-lg">
-                <p className="text-[10px] font-black text-green-500 uppercase mb-1">Feedback Atleta</p>
-                <p className="text-sm text-zinc-300 italic mb-2">"{logs[section].notes}"</p>
+              <div className="bg-zinc-800/40 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Feedback Atleta</p>
+                  <span className="text-[9px] text-zinc-500">Appena caricato</span>
+                </div>
+                
+                {logs[section].notes && (
+                  <p className="text-sm text-zinc-200 italic font-medium">"{logs[section].notes}"</p>
+                )}
+                
                 {logs[section].video_url && (
-                  <video src={logs[section].video_url} controls className="w-full rounded border border-zinc-700" />
+                  <div className="rounded-xl overflow-hidden border border-zinc-700 shadow-xl">
+                    <video 
+                      src={logs[section].video_url} 
+                      controls 
+                      className="w-full aspect-video bg-black" 
+                    />
+                  </div>
                 )}
               </div>
             )}
           </div>
         ))}
 
-        <button
-          onClick={saveWorkout}
-          className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-600/20"
-        >
-          {loading ? 'Salvataggio...' : saved ? '✓ Salvato' : 'Salva Programma'}
-        </button>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/80 backdrop-blur-md border-t border-zinc-800">
+           <button
+            onClick={saveWorkout}
+            className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/40 active:scale-95"
+          >
+            {loading ? 'Salvataggio...' : saved ? '✓ Programma Salvato' : 'Salva Programma'}
+          </button>
+        </div>
       </div>
     </div>
   )
