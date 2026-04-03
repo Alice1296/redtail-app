@@ -1,26 +1,36 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import Image from 'next/image'
 
-export default function Home() {
+export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function login() {
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
     setLoading(true)
-    setError('')
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError('Email o password errati')
+
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (authError) {
+      setError('Credenziali non valide. Riprova.')
       setLoading(false)
       return
     }
+
+    // Controllo Ruolo e Reindirizzamento
+    const user = data.user
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', data.user.id)
+      .eq('id', user?.id)
       .single()
 
     if (profile?.role === 'trainer') {
@@ -28,39 +38,67 @@ export default function Home() {
     } else {
       window.location.href = '/client'
     }
-    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <h1 className="text-4xl font-black text-white text-center mb-2 uppercase italic">FitApp</h1>
-        <p className="text-zinc-500 text-center mb-8 text-sm uppercase tracking-widest">Il tuo allenamento</p>
-        <div className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full bg-zinc-900 text-white border-2 border-zinc-700 rounded-lg p-4 focus:border-blue-500 outline-none"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="w-full bg-zinc-900 text-white border-2 border-zinc-700 rounded-lg p-4 focus:border-blue-500 outline-none"
-          />
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-          <button
-            onClick={login}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white font-black py-4 rounded-lg text-lg uppercase tracking-wider hover:bg-blue-500 transition-all"
-          >
-            {loading ? 'Caricamento...' : 'Entra'}
-          </button>
-        </div>
+    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 font-sans">
+      
+      {/* AREA LOGO E TITOLO */}
+      <div className="flex flex-col items-center mb-12 text-center">
+        {/* Assicurati di aver messo logo.png in /public */}
+        <Image 
+          src="/logo.png" 
+          alt="Redtail Logo" 
+          width={120} 
+          height={120} 
+          className="mb-4"
+        />
+        <h1 className="text-4xl font-black italic text-red-500 uppercase tracking-tighter">
+          Redtail Program
+        </h1>
+        <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest mt-1">
+          Il tuo allenamento, evoluto.
+        </p>
       </div>
+
+      {/* FORM DI LOGIN */}
+      <form onSubmit={handleLogin} className="w-full max-w-sm space-y-4">
+        {error && (
+          <div className="bg-red-900/50 border border-red-700 text-red-200 p-3 rounded-lg text-sm text-center font-bold">
+            {error}
+          </div>
+        )}
+
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+          required
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+          required
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-red-700 active:scale-95 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50"
+        >
+          {loading ? 'Entrando...' : 'Entra'}
+        </button>
+      </form>
+
+      <p className="text-xs text-zinc-700 mt-16 font-mono">
+        Redtail v1.0 | © 2024
+      </p>
     </div>
   )
 }
