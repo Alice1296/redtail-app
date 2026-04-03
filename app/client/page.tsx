@@ -96,6 +96,36 @@ export default function ClientPage() {
     setUploading(null)
   }
 
+  // NUOVA FUNZIONE PER ELIMINARE IL VIDEO
+  async function deleteVideo(section: string) {
+    if (!user || !logs[section]?.video_url) return
+    
+    const confirmDelete = confirm("Vuoi eliminare definitivamente questo video?")
+    if (!confirmDelete) return
+
+    setUploading(section)
+
+    try {
+      // 1. Estraiamo il path del file dall'URL per pulire lo storage
+      const url = logs[section].video_url
+      const fileName = url.split('/').pop()
+      const filePath = `${user.id}/${fileName}`
+      
+      await supabase.storage.from('videos').remove([filePath])
+
+      // 2. Aggiorniamo il DB settando l'URL a null
+      await supabase.from('client_logs')
+        .update({ video_url: null })
+        .eq('id', logs[section].id)
+
+      loadLogs()
+    } catch (err) {
+      console.error("Errore:", err)
+    } finally {
+      setUploading(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-black text-white font-sans pb-20">
       
@@ -167,7 +197,7 @@ export default function ClientPage() {
               <div className="space-y-4 pt-4 border-t border-zinc-800/50">
                 <textarea
                   className="w-full bg-black border border-zinc-800 rounded-2xl p-4 text-sm outline-none focus:border-red-600 transition-all h-24 placeholder:text-zinc-700"
-                  placeholder="Inserisci i tuoi risultati (kg, rpe, round...)"
+                  placeholder="Inserisci i tuoi risultati..."
                   defaultValue={logs[section]?.notes || ''}
                   onBlur={e => saveLog(section, e.target.value)}
                 />
@@ -180,12 +210,22 @@ export default function ClientPage() {
                   
                   {logs[section]?.video_url ? (
                     <div className="space-y-3">
-                      <video src={logs[section].video_url} controls className="w-full rounded-2xl border-2 border-zinc-800" />
+                      {/* VIDEO CON TASTO ELIMINA OVERLAY */}
+                      <div className="relative group">
+                        <video src={logs[section].video_url} controls className="w-full rounded-2xl border-2 border-zinc-800 shadow-lg" />
+                        <button 
+                          onClick={() => deleteVideo(section)}
+                          className="absolute -top-2 -right-2 bg-red-600 text-white w-8 h-8 rounded-full font-black shadow-xl hover:bg-red-700 transition-all flex items-center justify-center border-2 border-black active:scale-90"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      
                       <button 
                         onClick={() => fileRef.current[section]?.click()}
                         className="w-full bg-zinc-800 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
                       >
-                        {uploading === section ? 'Caricamento...' : 'Sostituisci Video'}
+                        {uploading === section ? 'In corso...' : 'Sostituisci Video'}
                       </button>
                     </div>
                   ) : (
@@ -208,10 +248,9 @@ export default function ClientPage() {
         )}
       </div>
 
-      {/* FEEDBACK SALVATAGGIO */}
       {saved && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white text-black px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100] animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300">
-          ✓ Log Aggiornato
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white text-black px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100] animate-bounce">
+          ✓ Dati salvati
         </div>
       )}
     </div>
