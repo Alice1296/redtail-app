@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useParams } from 'next/navigation'
 
 export default function TrainerPage() {
-  const { id } = useParams()
+  const { id } = useParams() // L'ID dell'atleta preso dall'URL
   const [week, setWeek] = useState(1)
   const [activeDay, setActiveDay] = useState('monday')
   const [form, setForm] = useState({ mobility: '', strength: '', wod: '', coach_notes: '' })
@@ -19,7 +19,7 @@ export default function TrainerPage() {
 
   useEffect(() => {
     if (id) {
-      setLogs({}); // Pulisce i video per evitare di vedere l'atleta sbagliato durante il caricamento
+      setLogs({}); // Fondamentale: pulisce i video dell'atleta precedente
       loadWorkout();
       loadLogs();
     }
@@ -34,7 +34,9 @@ export default function TrainerPage() {
 
   async function loadLogs() {
     const { data } = await supabase.from('client_logs').select('*')
-      .eq('client_id', id).eq('week_number', Number(week)).eq('day', activeDay)
+      .eq('client_id', id) // Carica SOLO i feedback di questo ID
+      .eq('week_number', Number(week))
+      .eq('day', activeDay)
     
     const map: any = {}; 
     data?.forEach(l => { map[l.section] = l }); 
@@ -59,11 +61,11 @@ export default function TrainerPage() {
 
   return (
     <div className="min-h-screen bg-black text-white pb-32">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase text-red-500 tracking-tighter">Coach Dashboard</div>
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase text-red-500 tracking-tighter text-lg">COACH DASHBOARD</div>
       
       <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
         <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
-        <div className="text-center"><span className="block text-[10px] text-zinc-500 uppercase font-black">Week</span><span className="text-xl font-black text-red-500 italic">{week}</span></div>
+        <div className="text-center"><span className="block text-[10px] text-zinc-500 uppercase font-black tracking-widest">Settimana</span><span className="text-xl font-black text-red-500 italic">{week}</span></div>
         <button onClick={() => setWeek(w => w + 1)} className="text-red-500 text-2xl font-bold">›</button>
       </div>
 
@@ -80,14 +82,14 @@ export default function TrainerPage() {
             <textarea 
               value={(form as any)[s]} 
               onChange={e => setForm({ ...form, [s]: e.target.value })} 
-              placeholder="Scrivi l'allenamento..."
-              className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 text-sm outline-none focus:border-red-600 transition-all shadow-inner" 
+              placeholder="Inserisci esercizi..." 
+              className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 text-sm outline-none focus:border-red-600 transition-all" 
             />
             
             {logs[s] && (
-              <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">
+              <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3 shadow-inner">
                 <p className="text-[10px] font-black text-green-500 uppercase tracking-widest italic">Feedback Atleta</p>
-                {logs[s].notes && <p className="text-sm italic text-zinc-200">"{logs[s].notes}"</p>}
+                {logs[s].notes && <p className="text-sm italic text-zinc-300 leading-relaxed">"{logs[s].notes}"</p>}
                 {logs[s].video_url && (
                   <div className="rounded-xl overflow-hidden border border-zinc-700 aspect-video bg-black shadow-2xl">
                     <video src={logs[s].video_url} controls className="w-full h-full object-contain" />
@@ -100,7 +102,7 @@ export default function TrainerPage() {
         
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 backdrop-blur-md border-t border-zinc-800 z-[60]">
           <button onClick={saveWorkout} disabled={loading} className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest shadow-xl shadow-red-600/40 active:scale-95 transition-all">
-            {loading ? 'Saving...' : saved ? '✓ Sent' : 'Save Program'}
+            {loading ? 'Salvataggio...' : saved ? '✓ Programma Inviato' : 'Salva Programma'}
           </button>
         </div>
       </div>
