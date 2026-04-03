@@ -27,7 +27,13 @@ export default function ClientPage() {
     })
   }, [])
 
-  useEffect(() => { if (user) { loadWorkout(); loadLogs() } }, [user, week, activeDay])
+  // Ricarica tutto quando cambiano utente, settimana o giorno
+  useEffect(() => { 
+    if (user) { 
+      loadWorkout()
+      loadLogs() 
+    } 
+  }, [user, week, activeDay])
 
   async function loadWorkout() {
     const { data } = await supabase.from('workouts').select('*')
@@ -36,8 +42,13 @@ export default function ClientPage() {
   }
 
   async function loadLogs() {
-    const { data } = await supabase.from('client_logs').select('*')
+    if (!user) return
+    // FILTRIAMO PER UTENTE, SETTIMANA E GIORNO
+    const { data } = await supabase.from('client_logs')
+      .select('*')
       .eq('client_id', user.id)
+      .eq('week_number', week)
+      .eq('day', activeDay)
     
     const map: any = {}
     data?.forEach(l => { map[l.section] = l })
@@ -55,7 +66,9 @@ export default function ClientPage() {
         client_id: user.id, 
         workout_id: workout?.id || null, 
         section, 
-        notes 
+        notes,
+        week_number: week, // SALVIAMO LA SETTIMANA
+        day: activeDay      // SALVIAMO IL GIORNO
       }])
     }
     setSaved(true)
@@ -68,7 +81,8 @@ export default function ClientPage() {
     setUploading(section)
     
     const fileExt = file.name.split('.').pop()
-    const fileName = `${user.id}/${section}_${Date.now()}.${fileExt}`
+    // Nome file univoco per giorno e settimana
+    const fileName = `${user.id}/${section}_w${week}_d${activeDay}_${Date.now()}.${fileExt}`
     
     const { data: upload, error } = await supabase.storage.from('videos').upload(fileName, file)
     
@@ -88,7 +102,9 @@ export default function ClientPage() {
         client_id: user.id, 
         workout_id: workout?.id || null, 
         section, 
-        video_url: url.publicUrl 
+        video_url: url.publicUrl,
+        week_number: week, // SALVIAMO LA SETTIMANA
+        day: activeDay      // SALVIAMO IL GIORNO
       }])
     }
     
@@ -96,7 +112,6 @@ export default function ClientPage() {
     setUploading(null)
   }
 
-  // NUOVA FUNZIONE PER ELIMINARE IL VIDEO
   async function deleteVideo(section: string) {
     if (!user || !logs[section]?.video_url) return
     
@@ -106,14 +121,12 @@ export default function ClientPage() {
     setUploading(section)
 
     try {
-      // 1. Estraiamo il path del file dall'URL per pulire lo storage
       const url = logs[section].video_url
       const fileName = url.split('/').pop()
       const filePath = `${user.id}/${fileName}`
       
       await supabase.storage.from('videos').remove([filePath])
 
-      // 2. Aggiorniamo il DB settando l'URL a null
       await supabase.from('client_logs')
         .update({ video_url: null })
         .eq('id', logs[section].id)
@@ -198,6 +211,7 @@ export default function ClientPage() {
                 <textarea
                   className="w-full bg-black border border-zinc-800 rounded-2xl p-4 text-sm outline-none focus:border-red-600 transition-all h-24 placeholder:text-zinc-700"
                   placeholder="Inserisci i tuoi risultati..."
+                  key={`${week}-${activeDay}-${section}`} // Forza reset textarea al cambio giorno
                   defaultValue={logs[section]?.notes || ''}
                   onBlur={e => saveLog(section, e.target.value)}
                 />
@@ -210,7 +224,6 @@ export default function ClientPage() {
                   
                   {logs[section]?.video_url ? (
                     <div className="space-y-3">
-                      {/* VIDEO CON TASTO ELIMINA OVERLAY */}
                       <div className="relative group">
                         <video src={logs[section].video_url} controls className="w-full rounded-2xl border-2 border-zinc-800 shadow-lg" />
                         <button 
