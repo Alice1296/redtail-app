@@ -32,9 +32,11 @@ export default function ClientPage() {
     const map: any = {}; lData?.forEach(l => { map[l.section] = l }); setLogs(map); setLoading(false)
   }
 
-  async function saveFeedback(section: string, notes: string, videoUrl?: string) {
+  async function saveFeedback(section: string, notes: string, videoUrls?: string[]) {
     if (!user) return
-    await supabase.from('client_logs').upsert({ client_id: user.id, week_number: Number(week), day: activeDay, section, notes: notes || '', video_url: videoUrl || logs[section]?.video_url || null }, { onConflict: 'client_id,week_number,day,section' })
+    const currentVideos = logs[section]?.video_urls || []
+    const finalVideos = videoUrls !== undefined ? videoUrls : currentVideos
+    await supabase.from('client_logs').upsert({ client_id: user.id, week_number: Number(week), day: activeDay, section, notes: notes || '', video_urls: finalVideos.length > 0 ? finalVideos : null }, { onConflict: 'client_id,week_number,day,section' })
     loadData(user.id)
   }
 
@@ -45,17 +47,24 @@ export default function ClientPage() {
       const { error: upErr } = await supabase.storage.from('videos').upload(fileName, file)
       if (upErr) throw upErr
       const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName)
-      await saveFeedback(section, logs[section]?.notes || '', publicUrl)
+      const currentVideos = logs[section]?.video_urls || []
+      await saveFeedback(section, logs[section]?.notes || '', [...currentVideos, publicUrl])
     } catch (err: any) { alert(err.message) } finally { setUploadingSection(null) }
   }
 
-  async function deleteVideo(section: string) {
-    if (!user || !logs[section]?.video_url || !confirm("Eliminare il video?")) return
+  async function deleteVideo(section: string, videoUrl: string) {
+    if (!user || !confirm("Eliminare il video?")) return
     try {
       setUploadingSection(section)
-      const fileName = `${user.id}/${logs[section].video_url.split('/').pop()}`
-      await supabase.storage.from('videos').remove([fileName])
-      await saveFeedback(section, logs[section]?.notes || '', "") // Rimuove URL dal DB
+      // Estrai il percorso del file dallo URL pubblico
+      const storagePath = videoUrl.split('/storage/v1/object/public/videos/')[1]
+      if (storagePath) {
+        await supabase.storage.from('videos').remove([storagePath])
+      }
+      // Rimuovi l'URL dall'array
+      const currentVideos = logs[section]?.video_urls || []
+      const updatedVideos = currentVideos.filter((v: string) => v !== videoUrl)
+      await saveFeedback(section, logs[section]?.notes || '', updatedVideos)
     } catch (err: any) { alert(err.message) } finally { setUploadingSection(null) }
   }
 
@@ -81,11 +90,21 @@ export default function ClientPage() {
             <textarea value={logs[s]?.notes || ''} onChange={(e) => setLogs({...logs, [s]: {...logs[s], notes: e.target.value}})} onBlur={(e) => saveFeedback(s, e.target.value)} placeholder="Feedback..." className="w-full bg-black border border-zinc-800 p-4 rounded-xl text-xs outline-none focus:border-green-600 min-h-[80px]" />
             <div className="flex gap-2">
                <input type="file" accept="video/*" id={`v-${s}`} className="hidden" onChange={(e) => e.target.files?.[0] && handleVideoUpload(s, e.target.files[0])} />
-               <label htmlFor={`v-${s}`} className={`flex-1 flex items-center justify-center p-3 rounded-xl border border-zinc-800 text-[10px] font-black uppercase cursor-pointer ${logs[s]?.video_url ? 'bg-green-600/10 border-green-600 text-green-500' : 'bg-zinc-800 text-zinc-400'}`}>
-                 {uploadingSection === s ? 'Wait...' : logs[s]?.video_url ? '✅ Video OK' : '📤 Upload'}
+               <label htmlFor={`v-${s}`} className={`flex-1 flex items-center justify-center p-3 rounded-xl border border-zinc-800 text-[10px] font-black uppercase cursor-pointer ${logs[s]?.video_urls?.length > 0 ? 'bg-green-600/10 border-green-600 text-green-500' : 'bg-zinc-800 text-zinc-400'}`}>
+                 {uploadingSection === s ? 'Wait...' : logs[s]?.video_urls?.length > 0 ? `✅ ${logs[s].video_urls.length} Video${logs[s].video_urls.length > 1 ? 's' : ''}` : '📤 Upload'}
                </label>
-               {logs[s]?.video_url && <button onClick={() => deleteVideo(s)} className="bg-red-600/10 border border-red-600 text-red-500 p-3 rounded-xl">✖</button>}
             </div>
+            {logs[s]?.video_urls && logs[s].video_urls.length > 0 && (
+              <div className="space-y-2 bg-black/30 p-4 rounded-xl border border-zinc-800">
+                <p className="text-[10px] font-black uppercase text-zinc-400">Video caricati:</p>
+                {logs[s].video_urls.map((videoUrl: string, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between bg-zinc-900 p-3 rounded-lg border border-zinc-800">
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 underline truncate flex-1">Video {idx + 1}</a>
+                    <button onClick={() => deleteVideo(s, videoUrl)} className="ml-2 bg-red-600/10 border border-red-600 text-red-500 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600/20">✖ Elimina</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )) : <div className="text-center py-20 text-zinc-600 font-black uppercase italic border border-dashed border-zinc-800 rounded-3xl">Rest Day</div>}
       </div>
