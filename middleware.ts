@@ -22,41 +22,57 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Recuperiamo la sessione corrente
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user
+  // 1. Recupero sessione (usiamo getUser per sicurezza extra lato server)
+  const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  // 1. 🟢 ECCEZIONE RESET PASSWORD
-  // Permettiamo sempre l'accesso a questa pagina, altrimenti il link della mail fallisce
-  if (pathname.startsWith('/reset-password')) {
+  // 2. ECCEZIONE RESET PASSWORD E LOGIN (Sempre accessibili)
+  if (pathname.startsWith('/reset-password') || pathname === '/') {
+    // Se l'utente è già loggato e prova ad andare in '/', lo mandiamo via
+    if (user && pathname === '/') {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      
+      const rolePath = profile?.role === 'trainer' ? '/trainer' : '/client'
+      return NextResponse.redirect(new URL(rolePath, request.url))
+    }
     return supabaseResponse
   }
 
-  // 2. 🔴 PROTEZIONE ROTTE PRIVATE
-  // Se non sei loggato e provi a entrare in /client o /trainer, vai in Home (Login)
+  // 3. PROTEZIONE ROTTE PRIVATE (/client, /trainer)
   if (!user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
-    return NextResponse.redirect(new URL('/', request.url))
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    return NextResponse.redirect(url)
   }
 
-  // 3. 🟡 REDIRECT INTELLIGENTE DALLA HOME
-  // Se sei già loggato e ti trovi sulla Home (pagina di login), ti smistiamo subito
-  if (user && pathname === '/') {
+  // 4. CONTROLLO RUOLO CROSS-ROUTING (Opzionale ma sicuro)
+  // Impedisce a un 'client' di digitare manualmente '/trainer' nell'URL
+  if (user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    // Se il ruolo è trainer vai su /trainer, altrimenti (default) su /client
-    const rolePath = profile?.role === 'trainer' ? '/trainer' : '/client'
-    return NextResponse.redirect(new URL(rolePath, request.url))
+    const role = profile?.role // 'trainer' o 'client'
+    
+    // Se un client prova a entrare in /trainer, lo rispediamo a /client
+    if (role === 'client' && pathname.startsWith('/trainer')) {
+      return NextResponse.redirect(new URL('/client', request.url))
+    }
+    // Se un trainer prova a entrare in /client, lo rispediamo a /trainer
+    if (role === 'trainer' && pathname.startsWith('/client')) {
+      return NextResponse.redirect(new URL('/trainer', request.url))
+    }
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  // Il matcher esclude i file statici (immagini, icone, ecc.) per non rallentare il sito
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
