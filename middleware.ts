@@ -9,7 +9,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
+        getAll() {
+          return request.cookies.getAll()
+        },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
             request.cookies.set(name, value)
@@ -20,17 +22,23 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user
+  const pathname = request.nextUrl.pathname
 
-  // Se sei loggato e sei sulla pagina di login (/)
-  if (user && request.nextUrl.pathname === '/') {
+  // 🔴 SE NON LOGGATO → BLOCCA ACCESSO A /client e /trainer
+  if (!user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
+    return NextResponse.redirect(new URL('/', request.url))
+  }
+
+  // 🔴 SE LOGGATO E SEI SU LOGIN → REDIRECT IN BASE AL RUOLO
+  if (user && pathname === '/') {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    // Se sei Alice vai su trainer, altrimenti (anche se NULL) vai su client
     const role = profile?.role === 'trainer' ? '/trainer' : '/client'
     return NextResponse.redirect(new URL(role, request.url))
   }
