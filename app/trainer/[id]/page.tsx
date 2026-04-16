@@ -8,6 +8,7 @@ export default function TrainerPage() {
   const router = useRouter()
   const [week, setWeek] = useState(1)
   const [activeDay, setActiveDay] = useState('monday')
+  const [clientName, setClientName] = useState('')
   const [form, setForm] = useState({ mobility: '', strength: '', wod: '', coach_notes: '' })
   const [logs, setLogs] = useState<any>({})
   const [loading, setLoading] = useState(false)
@@ -24,15 +25,21 @@ export default function TrainerPage() {
       if (!user) router.push('/')
     }
     checkUser()
-  }, [])
+  }, [router])
 
   useEffect(() => {
     if (id) {
-      setLogs({}) // Reset log/video per evitare scambi visivi tra giorni
+      loadClientName()
+      setLogs({})
       loadWorkout()
       loadLogs()
     }
   }, [id, week, activeDay])
+
+  async function loadClientName() {
+    const { data } = await supabase.from('profiles').select('name, email').eq('id', id).maybeSingle()
+    setClientName(data?.name || data?.email || 'Cliente')
+  }
 
   async function loadWorkout() {
     setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
@@ -93,8 +100,9 @@ export default function TrainerPage() {
           <span className="text-[10px] font-black uppercase tracking-widest mt-0.5">Atleti</span>
         </button>
 
-        <div className="font-black italic uppercase text-red-500 text-lg tracking-tighter">
-          Redtail Coach
+        <div className="text-center flex-1">
+          <div className="font-black italic uppercase text-red-500 text-sm tracking-tighter">{clientName}</div>
+          <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-black">Redtail Coach</div>
         </div>
 
         <button
@@ -197,6 +205,19 @@ export default function TrainerPage() {
             )}
           </div>
         ))}
+        
+        {/* NOTE DEL COACH */}
+        <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
+          <label className="text-yellow-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2">
+            <div className="w-1.5 h-4 bg-yellow-600 rounded-full" />NOTE COACH
+          </label>
+          <textarea 
+            value={form.coach_notes} 
+            onChange={e => setForm({ ...form, coach_notes: e.target.value })} 
+            placeholder="Scrivi note generali per questo cliente su questa settimana/giorno..."
+            className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 text-sm outline-none focus:border-yellow-600 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-700" 
+          />
+        </div>
         
         {/* PULSANTE SALVA FISSO IN BASSO */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/80 backdrop-blur-lg border-t border-zinc-800 z-[60]">
