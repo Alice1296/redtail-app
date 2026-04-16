@@ -72,6 +72,13 @@ export default function LoginPage() {
     }
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    setEmail('')
+    setPassword('')
+    setError(null)
+  }
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 font-sans">
       
@@ -94,6 +101,14 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-sm space-y-6">
+        <div className="flex justify-end">
+          <button
+            onClick={handleLogout}
+            className="bg-red-600/10 border border-red-600 text-red-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-red-600/20 transition-all active:scale-95"
+          >
+            Logout
+          </button>
+        </div>
         <form onSubmit={handleLogin} className="space-y-4">
           
           {/* MESSAGGIO ERRORE */}

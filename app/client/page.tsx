@@ -40,7 +40,10 @@ export default function ClientPage() {
     loadData(user.id)
   }
 
-  async function handleVideoUpload(section: string, file: File) {
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/')
+  }
     try {
       setUploadingSection(section)
       const fileName = `${user.id}/${Date.now()}-${section}.${file.name.split('.').pop()}`
@@ -70,7 +73,15 @@ export default function ClientPage() {
 
   return (
     <div className="min-h-screen bg-black text-white pb-32 font-sans">
-      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 text-center font-black italic uppercase text-lg">REDTAIL CLIENT</div>
+      <div className="bg-zinc-900 border-b-2 border-red-600 p-4 sticky top-0 z-50 flex items-center justify-between">
+        <div className="text-center flex-1 font-black italic uppercase text-lg">REDTAIL CLIENT</div>
+        <button
+          onClick={handleLogout}
+          className="ml-4 bg-red-600/10 border border-red-600 text-red-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-red-600/20 transition-all active:scale-95"
+        >
+          Logout
+        </button>
+      </div>
       <div className="flex justify-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
         <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="text-red-500 text-2xl font-bold">‹</button>
         <div className="text-center"><span className="block text-[10px] text-zinc-500 uppercase font-black">Week</span><span className="text-xl font-black text-red-500 italic">{week}</span></div>

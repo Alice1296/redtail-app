@@ -41,6 +41,11 @@ export default function TrainerClientsPage() {
     }
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/')
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -52,9 +57,17 @@ export default function TrainerClientsPage() {
   return (
     <div className="min-h-screen bg-black text-white p-6 font-sans">
       <div className="max-w-md mx-auto">
-        <h1 className="text-3xl font-black text-red-600 mb-8 uppercase italic tracking-tighter border-b-2 border-red-600 pb-2">
-          Atleti Redtail
-        </h1>
+        <div className="flex items-center justify-between mb-8 border-b-2 border-red-600 pb-2">
+          <h1 className="text-3xl font-black text-red-600 uppercase italic tracking-tighter">
+            Atleti Redtail
+          </h1>
+          <button
+            onClick={handleLogout}
+            className="bg-red-600/10 border border-red-600 text-red-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-red-600/20 transition-all active:scale-95"
+          >
+            Logout
+          </button>
+        </div>
 
         {error && (
           <div className="bg-red-900/20 border border-red-600 p-4 rounded-xl mb-6 text-red-500 text-xs">
