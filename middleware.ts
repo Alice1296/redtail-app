@@ -22,10 +22,12 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Non loggato → redirect al login
   if (!user && request.nextUrl.pathname !== '/') {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
+  // Loggato ma prova ad andare su /trainer senza essere trainer
   if (user && request.nextUrl.pathname.startsWith('/trainer')) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -38,6 +40,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Loggato ma va su /client senza essere client → rimanda al trainer
   if (user && request.nextUrl.pathname.startsWith('/client')) {
     const { data: profile } = await supabase
       .from('profiles')
