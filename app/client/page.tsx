@@ -61,16 +61,31 @@ export default function ClientPage() {
     if (!user || !confirm("Eliminare il video?")) return
     try {
       setUploadingSection(section)
-      // Estrai il percorso del file dallo URL pubblico
+      // Estrai il percorso relativo dal bucket
+      // URL pubblico: https://fjtxycgdtciyizvuhnqa.supabase.co/storage/v1/object/public/videos/userId/timestamp-section.ext
       const storagePath = videoUrl.split('/storage/v1/object/public/videos/')[1]
+      
       if (storagePath) {
-        await supabase.storage.from('videos').remove([storagePath])
+        const deleteRes = await supabase.storage.from('videos').remove([storagePath])
+        if (deleteRes.error) {
+          console.error('❌ Errore eliminazione file:', deleteRes.error)
+        } else {
+          console.log('✅ File eliminato dal bucket:', storagePath)
+        }
+      } else {
+        console.warn('⚠️ Impossibile estrarre il percorso del file')
       }
-      // Rimuovi l'URL dall'array
+      
+      // Rimuovi l'URL dall'array nel database
       const currentVideos = logs[section]?.video_urls || []
       const updatedVideos = currentVideos.filter((v: string) => v !== videoUrl)
       await saveFeedback(section, logs[section]?.notes || '', updatedVideos)
-    } catch (err: any) { alert(err.message) } finally { setUploadingSection(null) }
+    } catch (err: any) { 
+      console.error('❌ Errore durante eliminazione:', err)
+      alert(err.message) 
+    } finally { 
+      setUploadingSection(null) 
+    }
   }
 
   return (
