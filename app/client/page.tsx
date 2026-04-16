@@ -44,6 +44,8 @@ export default function ClientPage() {
     await supabase.auth.signOut()
     router.push('/')
   }
+
+  async function handleVideoUpload(section: string, file: File) {
     try {
       setUploadingSection(section)
       const fileName = `${user.id}/${Date.now()}-${section}.${file.name.split('.').pop()}`
