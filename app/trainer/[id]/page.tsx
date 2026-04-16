@@ -9,7 +9,14 @@ export default function TrainerPage() {
   const [week, setWeek] = useState(1)
   const [activeDay, setActiveDay] = useState('monday')
   const [clientName, setClientName] = useState('')
-  const [form, setForm] = useState({ mobility: '', strength: '', wod: '', coach_notes: '' })
+  const [form, setForm] = useState({ 
+    mobility: '', 
+    strength: '', 
+    wod: '', 
+    coach_notes_mobility: '',
+    coach_notes_strength: '',
+    coach_notes_wod: ''
+  })
   const [logs, setLogs] = useState<any>({})
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -42,15 +49,27 @@ export default function TrainerPage() {
   }
 
   async function loadWorkout() {
-    setForm({ mobility: '', strength: '', wod: '', coach_notes: '' })
+    setForm({ 
+      mobility: '', 
+      strength: '', 
+      wod: '',
+      coach_notes_mobility: '',
+      coach_notes_strength: '',
+      coach_notes_wod: ''
+    })
     const { data } = await supabase.from('workouts').select('*')
       .eq('client_id', id).eq('week_number', Number(week)).eq('day', activeDay).maybeSingle()
-    if (data) setForm({ 
-      mobility: data.mobility || '', 
-      strength: data.strength || '', 
-      wod: data.wod || '', 
-      coach_notes: data.coach_notes || '' 
-    })
+    if (data) {
+      const coachNotes = typeof data.coach_notes === 'string' ? JSON.parse(data.coach_notes || '{}') : (data.coach_notes || {})
+      setForm({ 
+        mobility: data.mobility || '', 
+        strength: data.strength || '', 
+        wod: data.wod || '', 
+        coach_notes_mobility: coachNotes.mobility || '',
+        coach_notes_strength: coachNotes.strength || '',
+        coach_notes_wod: coachNotes.wod || ''
+      })
+    }
   }
 
   async function loadLogs() {
@@ -66,12 +85,20 @@ export default function TrainerPage() {
 
   async function saveWorkout() {
     setLoading(true)
-    const { error } = await supabase.from('workouts').upsert({ 
+    const dataToSave = {
       client_id: id, 
       week_number: Number(week), 
-      day: activeDay, 
-      ...form 
-    }, { onConflict: 'client_id,week_number,day' })
+      day: activeDay,
+      mobility: form.mobility,
+      strength: form.strength,
+      wod: form.wod,
+      coach_notes: JSON.stringify({
+        mobility: form.coach_notes_mobility,
+        strength: form.coach_notes_strength,
+        wod: form.coach_notes_wod
+      })
+    }
+    const { error } = await supabase.from('workouts').upsert(dataToSave, { onConflict: 'client_id,week_number,day' })
     
     if (!error) { 
       setSaved(true)
@@ -203,21 +230,21 @@ export default function TrainerPage() {
                 )}
               </div>
             )}
+
+            {/* NOTE COACH PER QUESTA SEZIONE */}
+            <div className="bg-yellow-900/20 border border-yellow-700/50 p-4 rounded-xl space-y-2">
+              <label className="text-yellow-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+                <div className="w-1.5 h-2 bg-yellow-500 rounded-full" />NOTE COACH
+              </label>
+              <textarea 
+                value={(form as any)[`coach_notes_${s}`]} 
+                onChange={e => setForm({ ...form, [`coach_notes_${s}`]: e.target.value })} 
+                placeholder={`Note per l'atleta su ${s}...`}
+                className="w-full bg-black border border-yellow-700/30 p-3 rounded-lg h-24 text-xs outline-none focus:border-yellow-500 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-600" 
+              />
+            </div>
           </div>
         ))}
-        
-        {/* NOTE DEL COACH */}
-        <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
-          <label className="text-yellow-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2">
-            <div className="w-1.5 h-4 bg-yellow-600 rounded-full" />NOTE COACH
-          </label>
-          <textarea 
-            value={form.coach_notes} 
-            onChange={e => setForm({ ...form, coach_notes: e.target.value })} 
-            placeholder="Scrivi note generali per questo cliente su questa settimana/giorno..."
-            className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-32 text-sm outline-none focus:border-yellow-600 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-700" 
-          />
-        </div>
         
         {/* PULSANTE SALVA FISSO IN BASSO */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/80 backdrop-blur-lg border-t border-zinc-800 z-[60]">

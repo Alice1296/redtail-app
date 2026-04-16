@@ -100,6 +100,26 @@ export default function ClientPage() {
           <div key={s} className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4">
             <label className="text-red-500 font-black uppercase text-[11px] flex items-center gap-2"><div className="w-1.5 h-4 bg-red-600 rounded-full" />{s}</label>
             <div className="bg-black/50 border border-zinc-800 p-4 rounded-2xl whitespace-pre-wrap text-sm leading-relaxed">{workout[s]}</div>
+            
+            {/* NOTE COACH */}
+            {workout.coach_notes && (
+              (() => {
+                try {
+                  const coachNotes = typeof workout.coach_notes === 'string' ? JSON.parse(workout.coach_notes) : workout.coach_notes
+                  const sectionNote = coachNotes?.[s]
+                  if (sectionNote) {
+                    return (
+                      <div className="bg-yellow-900/20 border border-yellow-700/50 p-3 rounded-lg">
+                        <p className="text-[10px] font-black text-yellow-500 uppercase mb-2">📝 Nota del Coach</p>
+                        <p className="text-sm text-yellow-100/80 italic">{sectionNote}</p>
+                      </div>
+                    )
+                  }
+                } catch (e) {}
+                return null
+              })()
+            )}
+
             <textarea value={logs[s]?.notes || ''} onChange={(e) => setLogs({...logs, [s]: {...logs[s], notes: e.target.value}})} onBlur={(e) => saveFeedback(s, e.target.value)} placeholder="Feedback..." className="w-full bg-black border border-zinc-800 p-4 rounded-xl text-xs outline-none focus:border-green-600 min-h-[80px]" />
             <div className="flex gap-2">
                <input type="file" accept="video/*" id={`v-${s}`} className="hidden" onChange={(e) => e.target.files?.[0] && handleVideoUpload(s, e.target.files[0])} />
