@@ -141,9 +141,47 @@ export default function TrainerPage() {
                   <p className="text-[10px] font-black text-green-500 uppercase italic">Feedback Atleta</p>
                 </div>
                 {logs[s].notes && <p className="text-sm italic text-zinc-200 bg-black/30 p-3 rounded-lg border border-white/5">"{logs[s].notes}"</p>}
-                {logs[s].video_url && (
-                  <div className="rounded-xl overflow-hidden border border-zinc-700 aspect-video bg-black shadow-2xl">
-                    <video src={logs[s].video_url} controls className="w-full h-full object-contain" />
+                
+                {/* Mostra array di video */}
+                {logs[s].video_urls && Array.isArray(logs[s].video_urls) && logs[s].video_urls.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-green-400 uppercase italic">Video caricati ({logs[s].video_urls.length}):</p>
+                    {logs[s].video_urls.map((videoUrl: string, idx: number) => (
+                      <div key={idx} className="rounded-xl overflow-hidden border border-zinc-700 bg-black shadow-2xl">
+                        <div className="flex items-center justify-between bg-zinc-900 p-3">
+                          <span className="text-[10px] font-bold text-zinc-300">Video {idx + 1}</span>
+                          <a 
+                            href={videoUrl}
+                            download
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 transition-all active:scale-95"
+                          >
+                            ⬇ Scarica
+                          </a>
+                        </div>
+                        <video src={videoUrl} controls className="w-full aspect-video object-contain" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Fallback per il vecchio video_url */}
+                {logs[s].video_url && (!logs[s].video_urls || logs[s].video_urls.length === 0) && (
+                  <div className="rounded-xl overflow-hidden border border-zinc-700 bg-black shadow-2xl">
+                    <div className="flex items-center justify-between bg-zinc-900 p-3">
+                      <span className="text-[10px] font-bold text-zinc-300">Video</span>
+                      <a 
+                        href={logs[s].video_url}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 transition-all active:scale-95"
+                      >
+                        ⬇ Scarica
+                      </a>
+                    </div>
+                    <video src={logs[s].video_url} controls className="w-full aspect-video object-contain" />
                   </div>
                 )}
               </div>
