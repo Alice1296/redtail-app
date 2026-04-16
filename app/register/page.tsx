@@ -8,11 +8,21 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [lastAttempt, setLastAttempt] = useState(0)
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setMessage('')
+    
+    // Rudimentary rate limiting al client: minimo 3 secondi tra i tentativi
+    const now = Date.now()
+    if (now - lastAttempt < 3000) {
+      setMessage('Attendi qualche secondo prima di riprovare')
+      setLoading(false)
+      return
+    }
+    setLastAttempt(now)
     
     // 1. Eseguiamo SOLO il signUp. 
     // Il Trigger SQL su Supabase creerà automaticamente la riga in 'profiles'.
@@ -22,7 +32,13 @@ export default function RegisterPage() {
     })
 
     if (error) {
-      setMessage(`Errore: ${error.message}`)
+      if (error.message.includes('rate limit')) {
+        setMessage('Troppi tentativi. Attendi 15-30 minuti e riprova.')
+      } else if (error.message.includes('already registered')) {
+        setMessage('Questa email è già registrata!')
+      } else {
+        setMessage(`Errore: ${error.message}`)
+      }
     } else {
       setMessage("Registrazione completata! Reindirizzamento...")
       // Piccola attesa e poi torniamo alla home per il login
@@ -47,15 +63,17 @@ export default function RegisterPage() {
           <input
             type="email"
             placeholder="La tua Email"
-            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
+            value={email}
             onChange={(e) => setEmail(e.target.value)}
+            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
             required
           />
           <input
             type="password"
             placeholder="Password (min. 6 caratteri)"
-            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
+            value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
             required
           />
           <button
@@ -67,7 +85,11 @@ export default function RegisterPage() {
         </form>
         
         {message && (
-          <p className="text-center text-xs font-bold text-zinc-400 mt-4 animate-pulse">
+          <p className={`text-center text-xs font-bold mt-4 p-3 rounded-lg ${
+            message.includes('completata') 
+              ? 'bg-green-600/20 text-green-400 border border-green-600' 
+              : 'bg-red-600/20 text-red-400 border border-red-600'
+          }`}>
             {message}
           </p>
         )}

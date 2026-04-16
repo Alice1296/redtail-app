@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Script temporanei con secrets
+setup-trainer.js
+create-trainer-user.js
+fix-trainer-user.js
+investigate-trainer.js
+
