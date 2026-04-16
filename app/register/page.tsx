@@ -93,6 +93,19 @@ export default function RegisterPage() {
             {message}
           </p>
         )}
+
+        {message.includes('già registrata') && (
+          <div className="text-center text-xs space-y-2">
+            <p className="text-zinc-400">Hai già un account?</p>
+            <a href="/" className="inline-block text-red-500 font-bold uppercase hover:text-red-400 transition-colors">
+              Vai al Login →
+            </a>
+            <p className="text-zinc-600 text-[10px]">oppure</p>
+            <a href="/reset-password" className="inline-block text-yellow-500 font-bold uppercase hover:text-yellow-400 transition-colors">
+              Reset Password →
+            </a>
+          </div>
+        )}
       </div>
     </div>
   )
