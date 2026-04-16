@@ -22,16 +22,25 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // Recuperiamo la sessione corrente
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user
   const pathname = request.nextUrl.pathname
 
-  // 🔴 SE NON LOGGATO → BLOCCA ACCESSO A /client e /trainer
+  // 1. 🟢 ECCEZIONE RESET PASSWORD
+  // Permettiamo sempre l'accesso a questa pagina, altrimenti il link della mail fallisce
+  if (pathname.startsWith('/reset-password')) {
+    return supabaseResponse
+  }
+
+  // 2. 🔴 PROTEZIONE ROTTE PRIVATE
+  // Se non sei loggato e provi a entrare in /client o /trainer, vai in Home (Login)
   if (!user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // 🔴 SE LOGGATO E SEI SU LOGIN → REDIRECT IN BASE AL RUOLO
+  // 3. 🟡 REDIRECT INTELLIGENTE DALLA HOME
+  // Se sei già loggato e ti trovi sulla Home (pagina di login), ti smistiamo subito
   if (user && pathname === '/') {
     const { data: profile } = await supabase
       .from('profiles')
@@ -39,13 +48,15 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const role = profile?.role === 'trainer' ? '/trainer' : '/client'
-    return NextResponse.redirect(new URL(role, request.url))
+    // Se il ruolo è trainer vai su /trainer, altrimenti (default) su /client
+    const rolePath = profile?.role === 'trainer' ? '/trainer' : '/client'
+    return NextResponse.redirect(new URL(rolePath, request.url))
   }
 
   return supabaseResponse
 }
 
 export const config = {
+  // Il matcher esclude i file statici (immagini, icone, ecc.) per non rallentare il sito
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
