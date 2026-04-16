@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Image from 'next/image'
-import Link from 'next/link' // Aggiunto per il link alla registrazione
+import Link from 'next/link'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -15,7 +15,8 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
+    // 1. Eseguiamo il login
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -26,18 +27,13 @@ export default function LoginPage() {
       return
     }
 
-    const user = data.user
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user?.id)
-      .single()
-
-    if (profile?.role === 'trainer') {
-      window.location.href = '/trainer'
-    } else {
-      window.location.href = '/client'
-    }
+    /**
+     * 2. LA SVOLTA:
+     * Invece di fare mille controlli qui, ricarichiamo la radice ('/').
+     * Il tuo file 'proxy.ts' intercetterà la richiesta, leggerà il ruolo dal DB
+     * e spedirà l'utente su /client o /trainer in un millisecondo.
+     */
+    window.location.href = '/'
   }
 
   return (
@@ -51,6 +47,7 @@ export default function LoginPage() {
           width={120} 
           height={120} 
           className="mb-4"
+          priority // Aggiunto per caricare il logo subito
         />
         <h1 className="text-4xl font-black italic text-red-500 uppercase tracking-tighter">
           Redtail Program
@@ -74,7 +71,7 @@ export default function LoginPage() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all placeholder:text-zinc-600"
             required
           />
 
@@ -83,14 +80,14 @@ export default function LoginPage() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all"
+            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white outline-none focus:border-red-500 transition-all placeholder:text-zinc-600"
             required
           />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-red-700 active:scale-95 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50"
+            className="w-full bg-red-600 p-4 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-red-700 active:scale-95 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Entrando...' : 'Entra'}
           </button>
@@ -110,8 +107,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <p className="text-xs text-zinc-700 mt-16 font-mono">
-        Redtail v1.0 | © 2024
+      <p className="text-zinc-800 mt-16 font-mono text-[10px] uppercase tracking-widest">
+        Redtail v1.0 | © 2026
       </p>
     </div>
   )
