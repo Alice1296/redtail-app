@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
-    // 1. Eseguiamo il login
+    // 1. LOGIN
     const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -27,19 +27,39 @@ export default function LoginPage() {
       return
     }
 
-    /**
-     * 2. LA SVOLTA:
-     * Invece di fare mille controlli qui, ricarichiamo la radice ('/').
-     * Il tuo file 'proxy.ts' intercetterà la richiesta, leggerà il ruolo dal DB
-     * e spedirà l'utente su /client o /trainer in un millisecondo.
-     */
-    window.location.href = '/'
+    // 2. PRENDI UTENTE
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      setError('Errore nel recupero utente')
+      setLoading(false)
+      return
+    }
+
+    // 3. PRENDI RUOLO DAL DB
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError) {
+      setError('Errore nel recupero profilo')
+      setLoading(false)
+      return
+    }
+
+    // 4. REDIRECT DIRETTO (FIX)
+    if (profile?.role === 'trainer') {
+      window.location.href = '/trainer'
+    } else {
+      window.location.href = '/client'
+    }
   }
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 font-sans">
       
-      {/* AREA LOGO E TITOLO */}
       <div className="flex flex-col items-center mb-12 text-center">
         <Image 
           src="/logo.png" 
@@ -47,7 +67,7 @@ export default function LoginPage() {
           width={120} 
           height={120} 
           className="mb-4"
-          priority // Aggiunto per caricare il logo subito
+          priority
         />
         <h1 className="text-4xl font-black italic text-red-500 uppercase tracking-tighter">
           Redtail Program
@@ -57,7 +77,6 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* FORM DI LOGIN */}
       <div className="w-full max-w-sm space-y-6">
         <form onSubmit={handleLogin} className="space-y-4">
           {error && (
@@ -93,7 +112,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* --- TASTO REGISTRAZIONE --- */}
         <div className="text-center pt-4 border-t border-zinc-900">
           <p className="text-zinc-500 text-xs uppercase font-bold tracking-widest mb-4">
             Nuovo atleta?
