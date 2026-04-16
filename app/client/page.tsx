@@ -69,12 +69,20 @@ export default function ClientPage() {
       
       if (storagePath) {
         console.log('🗑️ Tentando eliminazione con percorso:', storagePath)
-        const deleteRes = await supabase.storage.from('videos').remove([storagePath])
-        console.log('📦 Risposta Supabase:', deleteRes)
         
-        if (deleteRes?.error) {
-          console.error('❌ Errore eliminazione file:', deleteRes.error)
-          alert('Errore: ' + JSON.stringify(deleteRes.error))
+        // Usa l'API route (server-side con service role key)
+        const apiRes = await fetch('/api/delete-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath: storagePath })
+        })
+        
+        const apiData = await apiRes.json()
+        console.log('📦 Risposta API:', apiData)
+        
+        if (!apiRes.ok) {
+          console.error('❌ Errore eliminazione file:', apiData.error)
+          alert('Errore: ' + apiData.error)
         } else {
           console.log('✅ File eliminato dal bucket:', storagePath)
         }
