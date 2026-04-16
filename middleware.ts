@@ -2,8 +2,14 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  // 1. Creiamo la risposta base
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
+  // 2. Inizializziamo Supabase con una gestione cookie ultra-precisa
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -15,62 +21,47 @@ export async function middleware(request: NextRequest) {
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
             request.cookies.set(name, value)
-            supabaseResponse.cookies.set(name, value, options)
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+            response.cookies.set(name, value, options)
           })
         },
       },
     }
   )
 
-  // 1. Recupero sessione (usiamo getUser per sicurezza extra lato server)
+  // 3. Recuperiamo l'utente (usiamo getUser che è più sicuro di getSession)
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  // 2. ECCEZIONE RESET PASSWORD E LOGIN (Sempre accessibili)
-  if (pathname.startsWith('/reset-password') || pathname === '/') {
-    // Se l'utente è già loggato e prova ad andare in '/', lo mandiamo via
-    if (user && pathname === '/') {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-      
-      const rolePath = profile?.role === 'trainer' ? '/trainer' : '/client'
-      return NextResponse.redirect(new URL(rolePath, request.url))
-    }
-    return supabaseResponse
+  // --- LOGICA DI REINDIRIZZAMENTO ---
+
+  // A. Escludi la pagina di reset password dai controlli
+  if (pathname.startsWith('/reset-password')) {
+    return response
   }
 
-  // 3. PROTEZIONE ROTTE PRIVATE (/client, /trainer)
+  // B. Se non sei loggato e provi a entrare nelle aree private -> Vai alla Home
   if (!user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/'
-    return NextResponse.redirect(url)
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // 4. CONTROLLO RUOLO CROSS-ROUTING (Opzionale ma sicuro)
-  // Impedisce a un 'client' di digitare manualmente '/trainer' nell'URL
-  if (user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
+  // C. Se sei loggato e ti trovi sulla Home -> Smistamento basato sul ruolo
+  if (user && pathname === '/') {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    const role = profile?.role // 'trainer' o 'client'
-    
-    // Se un client prova a entrare in /trainer, lo rispediamo a /client
-    if (role === 'client' && pathname.startsWith('/trainer')) {
-      return NextResponse.redirect(new URL('/client', request.url))
-    }
-    // Se un trainer prova a entrare in /client, lo rispediamo a /trainer
-    if (role === 'trainer' && pathname.startsWith('/client')) {
-      return NextResponse.redirect(new URL('/trainer', request.url))
-    }
+    const rolePath = profile?.role === 'trainer' ? '/trainer' : '/client'
+    return NextResponse.redirect(new URL(rolePath, request.url))
   }
 
-  return supabaseResponse
+  return response
 }
 
 export const config = {
