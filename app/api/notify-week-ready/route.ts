@@ -172,6 +172,7 @@ export async function POST(req: NextRequest) {
 
     let emailsSent = 0
     let emailsSkipped = 0
+    let firstEmailError: string | null = null
 
     for (const client of clientsToNotify) {
       try {
@@ -187,8 +188,13 @@ export async function POST(req: NextRequest) {
         if (emailResult.skipped) {
           emailsSkipped += 1
         }
-      } catch {
+      } catch (err: unknown) {
         emailsSkipped += 1
+
+        if (!firstEmailError) {
+          firstEmailError =
+            err instanceof Error ? err.message : 'Invio email non riuscito'
+        }
       }
     }
 
@@ -199,6 +205,11 @@ export async function POST(req: NextRequest) {
       emailsSent,
       emailsSkipped,
       emailConfigured: Boolean(gmailUser && gmailAppPassword),
+      emailConfigDebug: {
+        gmailUserPresent: Boolean(gmailUser),
+        gmailPasswordPresent: Boolean(gmailAppPassword),
+      },
+      firstEmailError,
       message:
         clientsToNotify.length > 0
           ? 'Notifiche inviate con successo'

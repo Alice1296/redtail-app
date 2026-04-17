@@ -129,8 +129,10 @@ export default function TrainerClientsPage() {
       }
 
       const emailMessage = result.emailConfigured
-        ? `Email inviate: ${result.emailsSent}`
-        : 'Email non configurate su server'
+        ? result.firstEmailError
+          ? `Email inviate: ${result.emailsSent}. Errore email: ${result.firstEmailError}`
+          : `Email inviate: ${result.emailsSent}`
+        : `Email non configurate su server (user: ${result.emailConfigDebug?.gmailUserPresent ? 'ok' : 'no'}, password: ${result.emailConfigDebug?.gmailPasswordPresent ? 'ok' : 'no'})`
 
       setSendFeedback(
         `Settimana ${currentWeek}: notifiche create ${result.notificationsCreated}. ${emailMessage}.`
