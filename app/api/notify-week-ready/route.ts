@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const resendApiKey = process.env.RESEND_API_KEY
 const emailFrom = process.env.EMAIL_FROM
 
@@ -35,8 +35,8 @@ async function sendWeekReadyEmail(to: string, weekNumber: number) {
       from: emailFrom,
       to: [to],
       subject: `Settimana ${weekNumber} pronta`,
-      text: `La settimana di allenamento ${weekNumber} è pronta, vola come una farfalla!`,
-      html: `<p>La settimana di allenamento <strong>${weekNumber}</strong> è pronta, vola come una farfalla!</p>`,
+      text: `La settimana di allenamento ${weekNumber} e pronta, vola come una farfalla!`,
+      html: `<p>La settimana di allenamento <strong>${weekNumber}</strong> e pronta, vola come una farfalla!</p>`,
     }),
   })
 
@@ -50,13 +50,6 @@ async function sendWeekReadyEmail(to: string, weekNumber: number) {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!supabaseServiceKey) {
-      return NextResponse.json(
-        { error: 'SUPABASE_SERVICE_ROLE_KEY mancante' },
-        { status: 500 }
-      )
-    }
-
     const { weekNumber } = await req.json()
 
     if (!weekNumber || Number.isNaN(Number(weekNumber))) {
@@ -84,9 +77,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
     }
 
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
+    const adminClient = supabaseServiceKey
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : null
+    const dataClient = adminClient ?? authClient
 
-    const { data: trainerProfile, error: trainerError } = await adminClient
+    const { data: trainerProfile, error: trainerError } = await dataClient
       .from('profiles')
       .select('role')
       .eq('id', user.id)
@@ -98,12 +94,12 @@ export async function POST(req: NextRequest) {
 
     if (trainerProfile?.role !== 'trainer') {
       return NextResponse.json(
-        { error: 'Solo il trainer può inviare notifiche massime' },
+        { error: 'Solo il trainer puo inviare notifiche massime' },
         { status: 403 }
       )
     }
 
-    const { data: profileRows, error: profileError } = await adminClient
+    const { data: profileRows, error: profileError } = await dataClient
       .from('profiles')
       .select('id, email, first_name, last_name, role')
 
@@ -133,10 +129,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const notificationMessage = `La settimana di allenamento ${Number(weekNumber)} è pronta, vola come una farfalla!`
+    const notificationMessage = `La settimana di allenamento ${Number(weekNumber)} e pronta, vola come una farfalla!`
 
     const { data: existingNotifications, error: existingError } =
-      await adminClient
+      await dataClient
         .from('notifications')
         .select('client_id')
         .eq('week_number', Number(weekNumber))
@@ -156,8 +152,10 @@ export async function POST(req: NextRequest) {
       (client) => !alreadyNotified.has(client.id)
     )
 
+    const notificationClient = adminClient ?? authClient
+
     if (clientsToNotify.length > 0) {
-      const { error: insertError } = await adminClient
+      const { error: insertError } = await notificationClient
         .from('notifications')
         .insert(
           clientsToNotify.map((client) => ({
@@ -206,7 +204,7 @@ export async function POST(req: NextRequest) {
       message:
         clientsToNotify.length > 0
           ? 'Notifiche inviate con successo'
-          : 'Questa settimana era già stata notificata a tutti',
+          : 'Questa settimana era gia stata notificata a tutti',
     })
   } catch (err: unknown) {
     return NextResponse.json(
@@ -214,7 +212,7 @@ export async function POST(req: NextRequest) {
         error:
           err instanceof Error
             ? err.message
-            : 'Errore durante l’invio delle notifiche',
+            : 'Errore durante l invio delle notifiche',
       },
       { status: 500 }
     )
