@@ -17,13 +17,9 @@ type ProfileRow = {
   role?: string | null
 }
 
-type NotificationRow = {
-  client_id: string
-}
-
 async function sendWeekReadyEmail(to: string, weekNumber: number) {
   if (!gmailUser || !gmailAppPassword) {
-    return { sent: false, skipped: true }
+    throw new Error('Invio email non configurato sul server')
   }
 
   const transporter = nodemailer.createTransport({
@@ -41,22 +37,6 @@ async function sendWeekReadyEmail(to: string, weekNumber: number) {
     subject: `Settimana ${weekNumber} pronta`,
     text: `La settimana di allenamento ${weekNumber} e pronta, vola come una farfalla!`,
     html: `<p>La settimana di allenamento <strong>${weekNumber}</strong> e pronta, vola come una farfalla!</p>`,
-  })
-
-  return { sent: true, skipped: false }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    env: {
-      supabaseUrlPresent: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      supabaseAnonKeyPresent: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      gmailUserPresent: Boolean(process.env.GMAIL_USER),
-      gmailPasswordPresent: Boolean(process.env.GMAIL_APP_PASSWORD),
-      vercelEnv: process.env.VERCEL_ENV || null,
-      vercelUrl: process.env.VERCEL_URL || null,
-    },
   })
 }
 
@@ -136,74 +116,42 @@ export async function POST(req: NextRequest) {
         success: true,
         notificationsCreated: 0,
         emailsSent: 0,
-        emailsSkipped: 0,
+        emailsFailed: 0,
         message: 'Nessun cliente trovato',
       })
     }
 
     const notificationMessage = `La settimana di allenamento ${Number(weekNumber)} e pronta, vola come una farfalla!`
-
-    const { data: existingNotifications, error: existingError } =
-      await dataClient
-        .from('notifications')
-        .select('client_id')
-        .eq('week_number', Number(weekNumber))
-        .eq('message', notificationMessage)
-
-    if (existingError) {
-      throw existingError
-    }
-
-    const alreadyNotified = new Set(
-      ((existingNotifications || []) as NotificationRow[]).map(
-        (notification) => notification.client_id
-      )
-    )
-
-    const clientsToNotify = clients.filter(
-      (client) => !alreadyNotified.has(client.id)
-    )
+    const clientsToNotify = clients
 
     const notificationClient = adminClient ?? authClient
 
-    if (clientsToNotify.length > 0) {
-      const { error: insertError } = await notificationClient
-        .from('notifications')
-        .insert(
-          clientsToNotify.map((client) => ({
-            client_id: client.id,
-            trainer_id: user.id,
-            week_number: Number(weekNumber),
-            message: notificationMessage,
-            read: false,
-          }))
-        )
+    const { error: insertError } = await notificationClient
+      .from('notifications')
+      .insert(
+        clientsToNotify.map((client) => ({
+          client_id: client.id,
+          trainer_id: user.id,
+          week_number: Number(weekNumber),
+          message: notificationMessage,
+          read: false,
+        }))
+      )
 
-      if (insertError) {
-        throw insertError
-      }
+    if (insertError) {
+      throw insertError
     }
 
     let emailsSent = 0
-    let emailsSkipped = 0
+    let emailsFailed = 0
     let firstEmailError: string | null = null
 
     for (const client of clientsToNotify) {
       try {
-        const emailResult = await sendWeekReadyEmail(
-          client.email as string,
-          Number(weekNumber)
-        )
-
-        if (emailResult.sent) {
-          emailsSent += 1
-        }
-
-        if (emailResult.skipped) {
-          emailsSkipped += 1
-        }
+        await sendWeekReadyEmail(client.email as string, Number(weekNumber))
+        emailsSent += 1
       } catch (err: unknown) {
-        emailsSkipped += 1
+        emailsFailed += 1
 
         if (!firstEmailError) {
           firstEmailError =
@@ -215,19 +163,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       notificationsCreated: clientsToNotify.length,
-      notificationsSkipped: clients.length - clientsToNotify.length,
       emailsSent,
-      emailsSkipped,
-      emailConfigured: Boolean(gmailUser && gmailAppPassword),
-      emailConfigDebug: {
-        gmailUserPresent: Boolean(gmailUser),
-        gmailPasswordPresent: Boolean(gmailAppPassword),
-      },
+      emailsFailed,
       firstEmailError,
-      message:
-        clientsToNotify.length > 0
-          ? 'Notifiche inviate con successo'
-          : 'Questa settimana era gia stata notificata a tutti',
+      message: 'Notifiche inviate con successo',
     })
   } catch (err: unknown) {
     return NextResponse.json(

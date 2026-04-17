@@ -128,11 +128,9 @@ export default function TrainerClientsPage() {
         throw new Error(result.error || 'Invio notifiche non riuscito')
       }
 
-      const emailMessage = result.emailConfigured
-        ? result.firstEmailError
-          ? `Email inviate: ${result.emailsSent}. Errore email: ${result.firstEmailError}`
-          : `Email inviate: ${result.emailsSent}`
-        : `Email non configurate su server (user: ${result.emailConfigDebug?.gmailUserPresent ? 'ok' : 'no'}, password: ${result.emailConfigDebug?.gmailPasswordPresent ? 'ok' : 'no'})`
+      const emailMessage = result.firstEmailError
+        ? `Email inviate: ${result.emailsSent}. Email fallite: ${result.emailsFailed}. Primo errore: ${result.firstEmailError}`
+        : `Email inviate: ${result.emailsSent}`
 
       setSendFeedback(
         `Settimana ${currentWeek}: notifiche create ${result.notificationsCreated}. ${emailMessage}.`
