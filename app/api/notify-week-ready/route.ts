@@ -1,12 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
+import nodemailer from 'nodemailer'
 import { NextRequest, NextResponse } from 'next/server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const resendApiKey = process.env.RESEND_API_KEY
-const emailFrom = process.env.EMAIL_FROM
+const gmailUser = process.env.GMAIL_USER
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
 
 type ProfileRow = {
   id: string
@@ -21,29 +22,26 @@ type NotificationRow = {
 }
 
 async function sendWeekReadyEmail(to: string, weekNumber: number) {
-  if (!resendApiKey || !emailFrom) {
+  if (!gmailUser || !gmailAppPassword) {
     return { sent: false, skipped: true }
   }
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json',
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
     },
-    body: JSON.stringify({
-      from: emailFrom,
-      to: [to],
-      subject: `Settimana ${weekNumber} pronta`,
-      text: `La settimana di allenamento ${weekNumber} e pronta, vola come una farfalla!`,
-      html: `<p>La settimana di allenamento <strong>${weekNumber}</strong> e pronta, vola come una farfalla!</p>`,
-    }),
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(errorText || 'Invio email non riuscito')
-  }
+  await transporter.sendMail({
+    from: `"Alice Redtail" <${gmailUser}>`,
+    to,
+    replyTo: gmailUser,
+    subject: `Settimana ${weekNumber} pronta`,
+    text: `La settimana di allenamento ${weekNumber} e pronta, vola come una farfalla!`,
+    html: `<p>La settimana di allenamento <strong>${weekNumber}</strong> e pronta, vola come una farfalla!</p>`,
+  })
 
   return { sent: true, skipped: false }
 }
@@ -200,7 +198,7 @@ export async function POST(req: NextRequest) {
       notificationsSkipped: clients.length - clientsToNotify.length,
       emailsSent,
       emailsSkipped,
-      emailConfigured: Boolean(resendApiKey && emailFrom),
+      emailConfigured: Boolean(gmailUser && gmailAppPassword),
       message:
         clientsToNotify.length > 0
           ? 'Notifiche inviate con successo'
