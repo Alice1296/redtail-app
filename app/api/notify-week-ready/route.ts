@@ -46,6 +46,20 @@ async function sendWeekReadyEmail(to: string, weekNumber: number) {
   return { sent: true, skipped: false }
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    env: {
+      supabaseUrlPresent: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      supabaseAnonKeyPresent: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      gmailUserPresent: Boolean(process.env.GMAIL_USER),
+      gmailPasswordPresent: Boolean(process.env.GMAIL_APP_PASSWORD),
+      vercelEnv: process.env.VERCEL_ENV || null,
+      vercelUrl: process.env.VERCEL_URL || null,
+    },
+  })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { weekNumber } = await req.json()
