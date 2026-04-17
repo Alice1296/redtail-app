@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useParams, useRouter } from 'next/navigation'
+import { DAYS, SCORE_TYPE_OPTIONS, type ScoreType } from '@/lib/community'
 
 type WorkoutForm = {
   mobility: string
   strength: string
   wod: string
+  wod_score_type: ScoreType | ''
+  wod_score_label: string
   coach_notes_mobility: string
   coach_notes_strength: string
   coach_notes_wod: string
@@ -20,20 +23,12 @@ type ClientLog = {
   video_urls?: string[] | null
 }
 
-const DAYS = [
-  { k: 'monday', l: 'LUN' },
-  { k: 'tuesday', l: 'MAR' },
-  { k: 'wednesday', l: 'MER' },
-  { k: 'thursday', l: 'GIO' },
-  { k: 'friday', l: 'VEN' },
-  { k: 'saturday', l: 'SAB' },
-  { k: 'sunday', l: 'DOM' },
-]
-
 const EMPTY_FORM: WorkoutForm = {
   mobility: '',
   strength: '',
   wod: '',
+  wod_score_type: '',
+  wod_score_label: '',
   coach_notes_mobility: '',
   coach_notes_strength: '',
   coach_notes_wod: '',
@@ -105,6 +100,8 @@ export default function TrainerPage() {
           mobility: workoutData.mobility || '',
           strength: workoutData.strength || '',
           wod: workoutData.wod || '',
+          wod_score_type: coachNotes.wod_score_type || '',
+          wod_score_label: coachNotes.wod_score_label || '',
           coach_notes_mobility: coachNotes.mobility || '',
           coach_notes_strength: coachNotes.strength || '',
           coach_notes_wod: coachNotes.wod || '',
@@ -144,6 +141,8 @@ export default function TrainerPage() {
         mobility: form.coach_notes_mobility,
         strength: form.coach_notes_strength,
         wod: form.coach_notes_wod,
+        wod_score_type: form.wod_score_type || null,
+        wod_score_label: form.wod_score_label || null,
       }),
     }
 
@@ -235,15 +234,15 @@ export default function TrainerPage() {
       <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
         {DAYS.map((day) => (
           <button
-            key={day.k}
-            onClick={() => setActiveDay(day.k)}
+            key={day.key}
+            onClick={() => setActiveDay(day.key)}
             className={`flex-1 min-w-[65px] py-3 rounded-xl font-black text-[10px] border transition-all ${
-              activeDay === day.k
+              activeDay === day.key
                 ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20'
                 : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-500'
             }`}
           >
-            {day.l}
+            {day.label}
           </button>
         ))}
       </div>
@@ -267,6 +266,44 @@ export default function TrainerPage() {
               placeholder={`Scrivi il programma ${section}...`}
               className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-40 text-sm outline-none focus:border-red-600 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-700"
             />
+
+            {section === 'wod' && (
+              <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                  Score per leaderboard
+                </p>
+
+                <select
+                  value={form.wod_score_type}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      wod_score_type: event.target.value as ScoreType | '',
+                    }))
+                  }
+                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
+                >
+                  <option value="">Nessun punteggio</option>
+                  {SCORE_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  value={form.wod_score_label}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      wod_score_label: event.target.value,
+                    }))
+                  }
+                  placeholder="Es. Time cap 12', Max reps, Peso migliore..."
+                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+            )}
 
             {logs[section] && (
               <div className="bg-zinc-800/60 border-l-4 border-green-500 p-4 mt-2 rounded-r-2xl space-y-3">

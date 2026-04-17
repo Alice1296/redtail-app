@@ -45,7 +45,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // B. Se non sei loggato e provi a entrare nelle aree private -> Vai alla Home
-  if (!user && (pathname.startsWith('/client') || pathname.startsWith('/trainer'))) {
+  if (
+    !user &&
+    (pathname.startsWith('/client') ||
+      pathname.startsWith('/trainer') ||
+      pathname.startsWith('/community'))
+  ) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 

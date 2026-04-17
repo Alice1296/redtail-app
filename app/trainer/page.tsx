@@ -197,6 +197,13 @@ export default function TrainerClientsPage() {
 
         <div className="mb-6 space-y-3">
           <button
+            onClick={() => router.push('/community')}
+            className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm hover:border-red-600 hover:text-red-400 transition-all"
+          >
+            Apri community e leaderboard
+          </button>
+
+          <button
             onClick={handleSendWeekReady}
             disabled={sendingWeek || clients.length === 0}
             className="w-full bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm hover:bg-red-700 active:scale-[0.98] transition-all shadow-xl shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -211,6 +218,10 @@ export default function TrainerClientsPage() {
               {sendFeedback}
             </div>
           )}
+
+          <p className="text-[10px] text-zinc-500 uppercase font-black tracking-wider">
+            Ogni click reinvia notifiche ed email per la settimana selezionata.
+          </p>
         </div>
 
         <div className="space-y-4">
