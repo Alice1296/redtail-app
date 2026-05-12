@@ -55,6 +55,47 @@ function emptyMaxMap() {
   return {} as Record<string, MaxValue>
 }
 
+function isMissingStorageError(error: { code?: string } | null) {
+  return (
+    error?.code === '42P01' ||
+    error?.code === '42703' ||
+    error?.code === 'PGRST106' ||
+    error?.code === 'PGRST204' ||
+    error?.code === 'PGRST205'
+  )
+}
+
+async function loadClientMaxes(
+  adminClient: ReturnType<typeof createAuthedClients>['adminClient'],
+  targetClientId: string
+) {
+  const { data, error } = await adminClient
+    .from('client_maxes')
+    .select('lift_name, value, unit')
+    .eq('client_id', targetClientId)
+
+  if (error) {
+    return { values: emptyMaxMap(), error }
+  }
+
+  const values = emptyMaxMap()
+
+  ;((data || []) as Array<{
+    lift_name: string
+    value: number
+    unit: string | null
+  }>).forEach((row) => {
+    const liftName = normalizeExerciseName(row.lift_name)
+    values[liftName] = {
+      value: Number(row.value),
+      unit: row.unit || 'kg',
+      updatedAt: null,
+    }
+  })
+
+  return { values, error: null }
+}
+
 async function loadLegacyNotificationMaxes(
   adminClient: ReturnType<typeof createAuthedClients>['adminClient'],
   targetClientId: string
@@ -124,6 +165,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const clientMaxesResult = await loadClientMaxes(adminClient, targetClientId)
+
+    if (!clientMaxesResult.error && Object.keys(clientMaxesResult.values).length > 0) {
+      return NextResponse.json({ values: clientMaxesResult.values })
+    }
+
     let values = emptyMaxMap()
 
     const { data: prRows, error: prError } = await adminClient
@@ -144,7 +191,7 @@ export async function GET(req: NextRequest) {
           updatedAt: row.updated_at,
         }
       })
-    } else if (prError.code !== '42P01') {
+    } else if (!isMissingStorageError(prError)) {
       throw prError
     }
 
@@ -207,6 +254,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    const clientMaxPayload = normalizedEntries.map((entry) => ({
+      client_id: user.id,
+      lift_name: entry.liftName,
+      value: entry.value,
+      unit: entry.unit,
+    }))
+
+    const { error: clientMaxUpsertError } = await adminClient
+      .from('client_maxes')
+      .upsert(clientMaxPayload, { onConflict: 'client_id,lift_name' })
+
+    if (!clientMaxUpsertError) {
+      return NextResponse.json({ ok: true, storage: 'client_maxes' })
+    }
+
     const prPayload = normalizedEntries.map((entry) => ({
       user_id: user.id,
       exercise_name: entry.liftName,
@@ -222,7 +284,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, storage: 'user_pr' })
     }
 
-    if (prUpsertError.code !== '42P01') {
+    if (!isMissingStorageError(prUpsertError)) {
       throw prUpsertError
     }
 
@@ -271,7 +333,7 @@ export async function POST(req: NextRequest) {
       } else {
         const { error: insertError } = await adminClient.from('notifications').insert({
           client_id: user.id,
-          trainer_id: user.id,
+          trainer_id: null,
           week_number: 0,
           message,
           read: true,

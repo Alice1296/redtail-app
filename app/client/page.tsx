@@ -597,17 +597,21 @@ export default function ClientPage() {
     setLogs({})
     setScoreSavedMessage('')
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const maxesResponse = await fetch('/api/maxes', {
-      headers: session?.access_token
-        ? { Authorization: `Bearer ${session.access_token}` }
-        : undefined,
-    })
-    if (maxesResponse.ok) {
-      const maxesPayload = await maxesResponse.json()
-      setPrValues((maxesPayload.values || {}) as Record<string, PrValue>)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const maxesResponse = await fetch('/api/maxes', {
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
+      })
+      if (maxesResponse.ok) {
+        const maxesPayload = await maxesResponse.json()
+        setPrValues((maxesPayload.values || {}) as Record<string, PrValue>)
+      }
+    } catch (error) {
+      console.error('Errore caricamento massimali:', error)
     }
 
     const { data: workoutData } = await supabase
@@ -669,11 +673,15 @@ export default function ClientPage() {
     })
     setLogs(logMap)
 
-    const scoreResponse = await fetch(
-      `/api/community?mode=my-score&week=${Number(week)}&day=${activeDay}`
-    )
-    const scorePayload = await scoreResponse.json()
-    const typedScore = (scorePayload.score || null) as ScoreEntry | null
+    const { data: scoreData } = await supabase
+      .from('workout_scores')
+      .select('score_type, score_display, note')
+      .eq('client_id', userId)
+      .eq('week_number', Number(week))
+      .eq('day', activeDay)
+      .maybeSingle()
+
+    const typedScore = scoreData as ScoreEntry | null
     setScoreDisplay(typedScore?.score_display || '')
     setScoreNote(typedScore?.note || '')
     setLoading(false)
@@ -973,24 +981,21 @@ export default function ClientPage() {
     try {
       setScoreLoading(true)
 
-      const response = await fetch('/api/community', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'submit-score',
-          week,
+      const { error } = await supabase.from('workout_scores').upsert(
+        {
+          client_id: user.id,
+          week_number: Number(week),
           day: activeDay,
-          scoreType: workout.wod_score_type,
-          scoreValue: parsedValue,
-          scoreDisplay: scoreDisplay.trim(),
+          score_type: workout.wod_score_type,
+          score_value: parsedValue,
+          score_display: scoreDisplay.trim(),
           note: scoreNote.trim() || null,
-        }),
-      })
+        },
+        { onConflict: 'client_id,week_number,day' }
+      )
 
-      const payload = await response.json()
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Errore salvataggio score')
+      if (error) {
+        throw error
       }
 
       setScoreSavedMessage('Score aggiornato sulla leaderboard')
