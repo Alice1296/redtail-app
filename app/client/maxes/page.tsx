@@ -6,9 +6,9 @@ import { supabase } from '@/lib/supabaseClient'
 import { DEFAULT_MAX_LIFTS } from '@/lib/community'
 
 type MaxRow = {
-  lift_name: string
   value: number
   unit: string
+  updatedAt?: string | null
 }
 
 export default function ClientMaxesPage() {
@@ -32,16 +32,25 @@ export default function ClientMaxesPage() {
 
       setUserId(user.id)
 
-      const { data, error } = await supabase
-        .from('client_maxes')
-        .select('lift_name, value, unit')
-        .eq('client_id', user.id)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const authHeaders = session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : undefined
 
-      if (!error) {
+      const response = await fetch('/api/maxes', {
+        headers: authHeaders,
+      })
+      const payload = await response.json()
+
+      if (response.ok) {
         const nextValues: Record<string, string> = {}
-        ;((data || []) as MaxRow[]).forEach((row) => {
-          nextValues[row.lift_name] = String(row.value)
-        })
+        Object.entries((payload.values || {}) as Record<string, MaxRow>).forEach(
+          ([liftName, row]) => {
+            nextValues[liftName] = String(row.value)
+          }
+        )
         setValues(nextValues)
       }
 
@@ -60,21 +69,34 @@ export default function ClientMaxesPage() {
       setSaving(true)
       setMessage('')
 
-      const payload = DEFAULT_MAX_LIFTS.filter((lift) => values[lift]?.trim()).map(
-        (lift) => ({
-          client_id: userId,
-          lift_name: lift,
-          value: Number(values[lift].replace(',', '.')),
-          unit: 'kg',
-        })
-      )
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const authHeaders: Record<string, string> = session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {}
 
-      const { error } = await supabase
-        .from('client_maxes')
-        .upsert(payload, { onConflict: 'client_id,lift_name' })
+      const response = await fetch('/api/maxes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          entries: DEFAULT_MAX_LIFTS.filter((lift) => values[lift]?.trim()).map(
+            (lift) => ({
+              liftName: lift,
+              value: Number(values[lift].replace(',', '.')),
+              unit: 'kg',
+            })
+          ),
+        }),
+      })
 
-      if (error) {
-        throw error
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Errore salvataggio massimali')
       }
 
       setMessage('Massimali aggiornati')
@@ -96,7 +118,7 @@ export default function ClientMaxesPage() {
             {'<'} Workout
           </button>
           <h1 className="text-3xl font-black text-red-600 uppercase italic tracking-tighter">
-            Massimali
+            I miei Massimali
           </h1>
           <button
             onClick={() => router.push('/community')}
@@ -104,6 +126,11 @@ export default function ClientMaxesPage() {
           >
             Community
           </button>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-xs text-zinc-400">
+          Usa i nomi standard qui sotto: sono gli stessi che la scheda usa per
+          calcolare automaticamente i carichi dalle percentuali.
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
