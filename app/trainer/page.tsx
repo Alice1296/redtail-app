@@ -9,6 +9,7 @@ type ClientProfile = {
   email: string | null
   first_name: string | null
   last_name: string | null
+  role?: string | null
 }
 
 type WorkoutRow = {
@@ -25,6 +26,7 @@ export default function TrainerClientsPage() {
   const [currentWeek, setCurrentWeek] = useState(1)
   const [loading, setLoading] = useState(true)
   const [sendingWeek, setSendingWeek] = useState(false)
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
   const [sendFeedback, setSendFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -46,14 +48,17 @@ export default function TrainerClientsPage() {
 
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, email, first_name, last_name')
+          .select('id, email, first_name, last_name, role')
           .order('first_name', { ascending: true })
 
         if (profileError) {
           throw profileError
         }
 
-        setClients((profileData || []) as ClientProfile[])
+        const filteredProfiles = (profileData || []).filter(
+          (profile) => profile.id !== user.id && profile.role !== 'trainer'
+        )
+        setClients(filteredProfiles as ClientProfile[])
 
         const { data: workoutData, error: workoutError } = await supabase
           .from('workouts')
@@ -107,6 +112,55 @@ export default function TrainerClientsPage() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/')
+  }
+
+  async function handleDeleteClient(client: ClientProfile) {
+    const clientLabel = getClientLabel(client)
+    const confirmed = confirm(
+      `Eliminare definitivamente l'account di ${clientLabel}? Questa azione cancellerà anche schede, feedback, notifiche e video caricati.`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setDeletingClientId(client.id)
+      setError(null)
+      setSendFeedback(null)
+
+      const response = await fetch('/api/admin/delete-client', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clientId: client.id }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Eliminazione atleta non riuscita')
+      }
+
+      setClients((current) => current.filter((item) => item.id !== client.id))
+      setWeekStatus((current) => {
+        const next = { ...current }
+        Object.keys(next).forEach((key) => {
+          if (key.startsWith(`${client.id}-`)) {
+            delete next[key]
+          }
+        })
+        return next
+      })
+      setSendFeedback(`${clientLabel} eliminato correttamente.`)
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Errore durante eliminazione atleta'
+      )
+    } finally {
+      setDeletingClientId(null)
+    }
   }
 
   async function handleSendWeekReady() {
@@ -234,46 +288,62 @@ export default function TrainerClientsPage() {
               return (
                 <div
                   key={client.id}
-                  onClick={() => router.push(`/trainer/${client.id}`)}
-                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 cursor-pointer hover:border-red-600 hover:bg-zinc-800/50 transition-all flex justify-between items-center gap-4 group shadow-xl"
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-red-600 hover:bg-zinc-800/50 transition-all flex justify-between items-center gap-4 group shadow-xl"
                 >
-                  <div className="flex-1">
-                    <p className="font-black text-lg uppercase italic group-hover:text-red-500 transition-colors">
-                      {getClientLabel(client)}
-                    </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/trainer/${client.id}`)}
+                    className="flex flex-1 items-center justify-between gap-4 text-left"
+                    aria-label={`Apri profilo di ${getClientLabel(client)}`}
+                  >
+                    <div className="flex-1">
+                      <p className="font-black text-lg uppercase italic group-hover:text-red-500 transition-colors">
+                        {getClientLabel(client)}
+                      </p>
 
-                    <div className="mt-2 flex items-center gap-2">
-                      <div
-                        className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-tight border ${
-                          isComplete
-                            ? 'bg-green-600/20 text-green-400 border-green-600/50'
-                            : completedDays > 0
-                              ? 'bg-yellow-600/20 text-yellow-400 border-yellow-600/50'
-                              : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-                        }`}
-                      >
-                        {isComplete
-                          ? `Settimana ${currentWeek} completa`
-                          : `${completedDays}/${DAYS_IN_WEEK} giorni`}
+                      <div className="mt-2 flex items-center gap-2">
+                        <div
+                          className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-tight border ${
+                            isComplete
+                              ? 'bg-green-600/20 text-green-400 border-green-600/50'
+                              : completedDays > 0
+                                ? 'bg-yellow-600/20 text-yellow-400 border-yellow-600/50'
+                                : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+                          }`}
+                        >
+                          {isComplete
+                            ? `Settimana ${currentWeek} completa`
+                            : `${completedDays}/${DAYS_IN_WEEK} giorni`}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="bg-zinc-800 group-hover:bg-red-600 p-2 rounded-full transition-all">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M9 18l6-6-6-6" />
-                    </svg>
-                  </div>
+                    <div className="rounded-full bg-zinc-800 p-2 transition-all group-hover:bg-red-600">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 18l6-6-6-6" />
+                      </svg>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteClient(client)}
+                    disabled={deletingClientId === client.id}
+                    className="flex-shrink-0 min-w-[88px] rounded-xl border border-red-600/60 bg-red-600/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-400 hover:bg-red-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={`Elimina ${getClientLabel(client)}`}
+                  >
+                    {deletingClientId === client.id ? 'Eliminazione...' : 'Elimina'}
+                  </button>
                 </div>
               )
             })
