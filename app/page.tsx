@@ -9,11 +9,20 @@ export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Controllo preventivo: se l'utente è già loggato, mandalo via dalla login
   useEffect(() => {
+    const rememberedEmail = window.localStorage.getItem('redtail-remembered-email')
+
+    if (rememberedEmail) {
+      setEmail(rememberedEmail)
+      setRememberMe(true)
+    }
+
     const checkActiveSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
@@ -46,6 +55,12 @@ export default function LoginPage() {
 
       if (!authData.user) throw new Error('Impossibile recuperare i dati utente.')
 
+      if (rememberMe) {
+        window.localStorage.setItem('redtail-remembered-email', email.trim())
+      } else {
+        window.localStorage.removeItem('redtail-remembered-email')
+      }
+
       // 2. RECUPERO PROFILO (Ruolo)
       // Usiamo un timeout logico o un fallback per evitare blocchi infiniti
       const { data: profile, error: profileError } = await supabase
@@ -66,8 +81,12 @@ export default function LoginPage() {
       // window.location.href è più drastico e pulisce lo stato, spesso meglio per il login
       window.location.href = targetPath
 
-    } catch (err: any) {
-      setError(err.message || 'Si è verificato un errore imprevisto.')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Si è verificato un errore imprevisto.'
+      )
       setLoading(false)
     }
   }
@@ -113,15 +132,35 @@ export default function LoginPage() {
               required
             />
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl text-white outline-none focus:border-red-600 transition-all placeholder:text-zinc-600 shadow-inner"
-              required
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-zinc-900/50 border border-zinc-800 p-4 pr-16 rounded-2xl text-white outline-none focus:border-red-600 transition-all placeholder:text-zinc-600 shadow-inner"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wide text-zinc-400 transition-colors hover:text-red-400"
+                aria-label={showPassword ? 'Nascondi password' : 'Mostra password'}
+              >
+                {showPassword ? 'Nascondi' : 'Mostra'}
+              </button>
+            </div>
           </div>
+
+          <label className="flex items-center gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/40 px-4 py-3 text-xs font-black uppercase tracking-wider text-zinc-500">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="h-4 w-4 accent-red-600"
+            />
+            Ricordami
+          </label>
 
           <button
             type="submit"
@@ -152,8 +191,9 @@ export default function LoginPage() {
             Crea il tuo Account
           </Link>
           
-          <button 
-            onClick={() => {/* funzione reset password */}}
+          <button
+            type="button"
+            onClick={() => window.location.href = '/reset-password'}
             className="mt-6 text-zinc-600 text-[10px] uppercase font-bold tracking-tighter hover:text-red-500 transition-colors"
           >
             Hai dimenticato la password?
