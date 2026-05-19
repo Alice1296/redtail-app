@@ -26,46 +26,54 @@ export default function ResetPasswordPage() {
       const hashAccessToken = hash.get('access_token')
       const hashRefreshToken = hash.get('refresh_token')
       const hashType = hash.get('type')
-
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) {
-          setMessage('Link scaduto o non valido. Richiedi un nuovo reset password.')
-          setMode('request')
-          return
-        }
-
-        window.history.replaceState({}, document.title, '/reset-password')
-        setMode('update')
-        return
-      }
-
       const accessToken = queryAccessToken || hashAccessToken
       const refreshToken = queryRefreshToken || hashRefreshToken
       const type = queryType || hashType
 
-      if (accessToken && refreshToken && type === 'recovery') {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        })
+      try {
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
+          if (!error) {
+            window.history.replaceState({}, document.title, '/reset-password')
+            setMode('update')
+            return
+          }
 
-        if (error) {
-          setMessage('Link scaduto o non valido. Richiedi un nuovo reset password.')
+          console.warn('Supabase recovery code exchange failed:', error.message)
+        }
+
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+
+          if (!error) {
+            window.history.replaceState({}, document.title, '/reset-password')
+            setMode('update')
+            return
+          }
+
+          setMessage(
+            `Link di recovery non valido o già usato: ${error.message}`
+          )
           setMode('request')
           return
         }
 
-        window.history.replaceState({}, document.title, '/reset-password')
-        setMode('update')
-        return
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        setMode(session ? 'update' : 'request')
+      } catch (error: unknown) {
+        setMessage(
+          error instanceof Error
+            ? `Errore durante il ripristino: ${error.message}`
+            : 'Errore durante il ripristino della password.'
+        )
+        setMode('request')
       }
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      setMode(session ? 'update' : 'request')
     }
 
     prepareRecoverySession()
