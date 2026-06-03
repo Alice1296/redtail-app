@@ -17,6 +17,7 @@ import {
   normalizeExerciseName,
   normalizeWodConfig,
   parseScoreValue,
+  findExerciseNameInText,
   type DayKey,
   type ScoreType,
   type TimerTimelineState,
@@ -144,37 +145,79 @@ function SmartPrText({
   text: string
   prValues: Record<string, PrValue>
 }) {
-  const exercisePattern = DEFAULT_MAX_LIFTS.map((lift) =>
-    lift.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  ).join('|')
-  const pattern = new RegExp(`\\b(${exercisePattern})\\s+(\\d{1,3}(?:[,.]\\d+)?)%`, 'gi')
+  const percentagePattern = /((?:\d+\s*(?:r|x)?\s*@\s*)?(\d{1,3}(?:[.,]\d+)?(?:\s*[-–]\s*\d{1,3}(?:[.,]\d+)?)*?)\s*%)/gi
   const nodes: ReactNode[] = []
-  let cursor = 0
+  let lastIndex = 0
+  let currentExercise: string | null = null
   let match: RegExpExecArray | null
 
-  while ((match = pattern.exec(text)) !== null) {
-    const [rawMatch, exerciseName, rawPercentage] = match
-    const percentage = Number(rawPercentage.replace(',', '.'))
-    const start = match.index
+  const renderTextWithLineBreaks = (value: string, keyPrefix: string) =>
+    value.split('\n').flatMap((segment, segmentIndex, array) =>
+      segmentIndex === array.length - 1
+        ? [<span key={`${keyPrefix}-${segmentIndex}`}>{segment}</span>]
+        : [
+            <span key={`${keyPrefix}-${segmentIndex}`}>{segment}</span>,
+            <br key={`${keyPrefix}-br-${segmentIndex}`} />,
+          ]
+    )
 
-    if (start > cursor) {
-      nodes.push(<span key={`text-${cursor}`}>{text.slice(cursor, start)}</span>)
+  const parsePercentageSequence = (rawValue: string) =>
+    rawValue
+      .split(/[-–]/g)
+      .map((part) => Number(part.replace(',', '.').trim()))
+      .filter((value) => !Number.isNaN(value))
+
+  percentagePattern.lastIndex = 0
+
+  while ((match = percentagePattern.exec(text)) !== null) {
+    const [rawMatch, , rawPercentageSequence] = match
+    const start = match.index
+    const end = start + rawMatch.length
+    const percentages = parsePercentageSequence(rawPercentageSequence)
+
+    if (start > lastIndex) {
+      nodes.push(
+        ...renderTextWithLineBreaks(text.slice(lastIndex, start), `text-${lastIndex}`)
+      )
     }
 
-    const load = calculateLoad(exerciseName, percentage, prValues)
+    const surroundingText = text.slice(Math.max(0, start - 50), start)
+    const exerciseName: string | null =
+      findExerciseNameInText(surroundingText) ||
+      findExerciseNameInText(rawMatch) ||
+      currentExercise
+
+    if (exerciseName) {
+      currentExercise = exerciseName
+    }
+
+    const loads = exerciseName
+      ? percentages
+          .map((percentage) => calculateLoad(exerciseName, percentage, prValues))
+          .filter(
+            (load): load is Exclude<ReturnType<typeof calculateLoad>, null> =>
+              Boolean(load)
+          )
+      : []
+
+    const loadDisplay = loads.length
+      ? loads.map((load) => `${load.calculatedWeight}${load.unit}`).join(', ')
+      : null
 
     nodes.push(
       <span key={`pr-${start}`} className="inline-flex flex-wrap items-center gap-1">
-        <span>{rawMatch}</span>
-        {load ? (
+        <span>{renderTextWithLineBreaks(rawMatch, `raw-${start}`)}</span>
+        {loadDisplay ? (
           <span
             tabIndex={0}
-            title={`Calcolato sul tuo massimale di ${load.maxWeight}${load.unit} impostato il ${formatPrDate(load.updatedAt)}`}
+            title={`Calcolato sul tuo massimale di ${loads[0]?.maxWeight}${loads[0]?.unit} impostato il ${formatPrDate(
+              loads[0]?.updatedAt
+            )}`}
             className="inline-flex rounded-md border border-green-600/40 bg-green-600/10 px-1.5 py-0.5 text-[11px] font-black text-green-300"
           >
-            {'->'} {load.calculatedWeight}{load.unit}
+            {'->'} {loadDisplay}
           </span>
-        ) : (
+        ) : exerciseName ? (
           <span
             tabIndex={0}
             title={`Imposta il massimale di ${normalizeExerciseName(exerciseName)} per calcolare il peso`}
@@ -182,15 +225,17 @@ function SmartPrText({
           >
             imposta massimale
           </span>
-        )}
+        ) : null}
       </span>
     )
 
-    cursor = start + rawMatch.length
+    lastIndex = end
   }
 
-  if (cursor < text.length) {
-    nodes.push(<span key={`text-${cursor}`}>{text.slice(cursor)}</span>)
+  if (lastIndex < text.length) {
+    nodes.push(
+      ...renderTextWithLineBreaks(text.slice(lastIndex), `text-${lastIndex}`)
+    )
   }
 
   return <>{nodes}</>
@@ -547,6 +592,21 @@ export default function ClientPage() {
     } catch {}
   }
   
+  const speakAnnouncement = (text: string) => {
+    try {
+      // Cancella eventuali annunci precedenti
+      window.speechSynthesis?.cancel()
+      
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = 'it-IT'
+      utterance.rate = 1
+      utterance.pitch = 1
+      utterance.volume = 1
+      
+      window.speechSynthesis?.speak(utterance)
+    } catch {}
+  }
+  
   // Timer States
   const [seconds, setSeconds] = useState(0)
   const [isTimerRunning, setIsTimerRunning] = useState(false)
@@ -559,6 +619,10 @@ export default function ClientPage() {
   const timerStartedAtRef = useRef<number | null>(null)
   const timerBaseSecondsRef = useRef(0)
   const lastBeepSecondRef = useRef(0)
+  const lastAnnouncedSegmentIdRef = useRef<string | null>(null)
+  const lastAnnouncedHalfwayRef = useRef<string | null>(null)
+  const lastAnnounced30SecRef = useRef<string | null>(null)
+  const lastCountdownSecRef = useRef(-1)
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
   const router = useRouter()
 
@@ -708,6 +772,10 @@ export default function ClientPage() {
     timerStartedAtRef.current = null
     timerBaseSecondsRef.current = 0
     lastBeepSecondRef.current = 0
+    lastAnnouncedSegmentIdRef.current = null
+    lastAnnouncedHalfwayRef.current = null
+    lastAnnounced30SecRef.current = null
+    lastCountdownSecRef.current = -1
   }, [activeDay, user, week, workout?.wod_timer_config])
 
   useEffect(() => {
@@ -729,15 +797,24 @@ export default function ClientPage() {
     setClientWodConfig((current) => {
       const timerConfig = getInitialClientTimerConfig(current)
 
+      let newSegments: WodTimerSegment[]
+      if (mode === 'Free') {
+        newSegments = []
+      } else if (timerConfig.segments && timerConfig.segments.length > 0) {
+        newSegments = timerConfig.segments
+      } else if (mode === 'EMOM') {
+        // Per EMOM, creare 5 minuti (5 segmenti di 60 secondi)
+        newSegments = Array.from({ length: 5 }, (_, i) => 
+          createTimerSegment('work', 60)
+        )
+      } else {
+        newSegments = [createTimerSegment('work', 6 * 60)]
+      }
+
       return {
         ...timerConfig,
         mode,
-        segments:
-          mode === 'Free'
-            ? []
-            : timerConfig.segments && timerConfig.segments.length > 0
-              ? timerConfig.segments
-              : [createTimerSegment('work', 6 * 60)],
+        segments: newSegments,
       }
     })
   }
@@ -852,6 +929,10 @@ export default function ClientPage() {
       timerStartedAtRef.current = null
       timerBaseSecondsRef.current = 0
       lastBeepSecondRef.current = 0
+      lastAnnouncedSegmentIdRef.current = null
+      lastAnnouncedHalfwayRef.current = null
+      lastAnnounced30SecRef.current = null
+      lastCountdownSecRef.current = -1
       void releaseScreenWakeLock()
     }
   }
@@ -865,11 +946,54 @@ export default function ClientPage() {
     const timeline = getTimerTimelineState(config, currentSecs)
 
     if (timeline.type === 'countdown') {
-      if (timeline.remainingSegmentSeconds === 3 || timeline.remainingSegmentSeconds === 2) {
+      const segmentId = timeline.currentSegment?.id || null
+      const remaining = timeline.remainingSegmentSeconds || 0
+      const totalDuration = timeline.currentSegment?.durationSeconds || 0
+      const phase = timeline.currentSegment?.phase || null
+      const segmentIndex = config?.segments?.findIndex(s => s.id === segmentId) ?? -1
+      const roundNumber = segmentIndex + 1
+
+      // Annuncia quando inizia un nuovo segmento
+      if (segmentId && lastAnnouncedSegmentIdRef.current !== segmentId) {
+        lastAnnouncedSegmentIdRef.current = segmentId
+        if (phase === 'rest') {
+          speakAnnouncement('Rest')
+        } else if (phase === 'work') {
+          speakAnnouncement(`Round ${roundNumber}`)
+        }
+      }
+
+      // Annuncia a metà del segmento
+      if (segmentId && totalDuration > 0) {
+        const halfway = Math.ceil(totalDuration / 2)
+        if (remaining === halfway && lastAnnouncedHalfwayRef.current !== segmentId) {
+          lastAnnouncedHalfwayRef.current = segmentId
+          speakAnnouncement('Halfway')
+        }
+      }
+
+      // Annuncia a 30 secondi rimanenti
+      if (remaining === 30 && lastAnnounced30SecRef.current !== segmentId) {
+        lastAnnounced30SecRef.current = segmentId
+        speakAnnouncement('30 secondi')
+      }
+
+      // Conto alla rovescia degli ultimi 10 secondi
+      if (remaining <= 10 && remaining > 0) {
+        if (lastCountdownSecRef.current !== remaining) {
+          lastCountdownSecRef.current = remaining
+          if (remaining <= 5) {
+            speakAnnouncement(remaining.toString())
+          }
+        }
+      }
+
+      // Beep sonori
+      if (remaining === 3 || remaining === 2) {
         playBeep(440, 0.1)
       }
 
-      if (timeline.remainingSegmentSeconds === 1) {
+      if (remaining === 1) {
         playBeep(880, 0.2)
         triggerFlash()
       }
@@ -877,9 +1001,13 @@ export default function ClientPage() {
       return
     }
 
-    if (config?.mode === 'EMOM') {
+    // Se la configurazione non ha segmenti espliciti ma è in modalità EMOM
+    // (non dovrebbe accadere con il nuovo codice, ma per sicurezza)
+    if (config?.mode === 'EMOM' && timeline.type === 'stopwatch') {
       const secInMin = currentSecs % 60
+      // Beep a 3, 2 secondi prima della fine del minuto
       if (secInMin === 57 || secInMin === 58) playBeep(440, 0.1)
+      // Beep più forte a 1 secondo prima della fine
       if (secInMin === 59) {
         playBeep(880, 0.2)
         triggerFlash()
