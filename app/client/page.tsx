@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
-import { WeekSelector } from '@/app/components/WeekSelector'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   DAYS,
   DEFAULT_MAX_LIFTS,
@@ -547,11 +546,33 @@ function TimerPanel({
   )
 }
 
-export default function ClientPage() {
+export default function ClientPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-zinc-400">Caricamento...</div></div>}>
+      <ClientPage />
+    </Suspense>
+  )
+}
+
+function ClientPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Initialize from URL params
+  const initialWeek = parseInt(searchParams.get('week') || '1', 10)
+  const initialDay = (searchParams.get('day') || 'monday') as DayKey
+  
+  // Redirect to week/day selector if params missing
+  useEffect(() => {
+    if (!searchParams.has('week') || !searchParams.has('day')) {
+      router.push('/client/select-week')
+    }
+  }, [searchParams, router])
+  
   const [user, setUser] = useState<SessionUser | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
-  const [week, setWeek] = useState(1)
-  const [activeDay, setActiveDay] = useState<DayKey>('monday')
+  const [week, setWeek] = useState(initialWeek)
+  const [activeDay, setActiveDay] = useState<DayKey>(initialDay)
   const [workout, setWorkout] = useState<WorkoutRow | null>(null)
   const [logs, setLogs] = useState<Record<string, ClientLog>>({})
   const [prValues, setPrValues] = useState<Record<string, PrValue>>({})
@@ -625,7 +646,6 @@ export default function ClientPage() {
   const lastAnnounced30SecRef = useRef<string | null>(null)
   const lastCountdownSecRef = useRef(-1)
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
-  const router = useRouter()
 
   useEffect(() => {
     async function init() {
@@ -1251,26 +1271,26 @@ export default function ClientPage() {
       </div>
 
       <div className="p-4 bg-zinc-900 border-b border-zinc-800">
-        <WeekSelector
-          currentWeek={week}
-          onWeekChange={setWeek}
-          maxVisibleWeeks={12}
-        />
+        <button
+          onClick={() => router.push('/client/select-week')}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+        >
+          📅 Cambio Settimana / Giorno
+        </button>
       </div>
 
       <div className="flex gap-1 p-2 bg-zinc-900 overflow-x-auto no-scrollbar border-b border-white/5">
         {DAYS.map((day) => (
-          <button
+          <div
             key={day.key}
-            onClick={() => setActiveDay(day.key)}
-            className={`flex-1 min-w-[55px] py-3 rounded-xl font-black text-[10px] border ${
+            className={`flex-1 min-w-[55px] py-3 rounded-xl font-black text-[10px] border text-center ${
               activeDay === day.key
                 ? 'bg-red-600 border-red-500 text-white'
                 : 'bg-zinc-800 border-zinc-700 text-zinc-500'
             }`}
           >
             {day.label}
-          </button>
+          </div>
         ))}
       </div>
 

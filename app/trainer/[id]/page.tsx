@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useParams, useRouter } from 'next/navigation'
-import { WeekSelector } from '@/app/components/WeekSelector'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { WorkoutParser } from '@/app/components/WorkoutParser'
 import {
   DAYS,
@@ -73,12 +72,33 @@ const EMPTY_FORM: WorkoutForm = {
   coach_notes_wod: '',
 }
 
-export default function TrainerPage() {
+export default function TrainerPageWrapper() {
   const params = useParams<{ id: string }>()
-  const id = params.id
+  
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="text-zinc-400">Caricamento...</div></div>}>
+      <TrainerPage id={params.id} />
+    </Suspense>
+  )
+}
+
+function TrainerPage({ id }: { id: string }) {
   const router = useRouter()
-  const [week, setWeek] = useState(1)
-  const [activeDay, setActiveDay] = useState('monday')
+  const searchParams = useSearchParams()
+  
+  // Initialize from URL params
+  const initialWeek = parseInt(searchParams.get('week') || '1', 10)
+  const initialDay = searchParams.get('day') || 'monday'
+  
+  // Redirect to week/day selector if params missing
+  useEffect(() => {
+    if (!searchParams.has('week') || !searchParams.has('day')) {
+      router.push(`/trainer/${id}/select-week`)
+    }
+  }, [searchParams, router, id])
+  
+  const [week, setWeek] = useState(initialWeek)
+  const [activeDay, setActiveDay] = useState(initialDay)
   const [clientName, setClientName] = useState('')
   const [form, setForm] = useState<WorkoutForm>(EMPTY_FORM)
   const [logs, setLogs] = useState<Record<string, ClientLog>>({})
@@ -487,29 +507,19 @@ export default function TrainerPage() {
         </button>
       </div>
 
-      <div className="p-4 bg-zinc-900 border-b border-zinc-800">
-        <WeekSelector
-          currentWeek={week}
-          onWeekChange={setWeek}
-          clientId={id}
-          maxVisibleWeeks={12}
-        />
+      <div className="p-4 bg-zinc-900 border-b border-zinc-800 flex gap-2">
+        <button
+          onClick={() => router.push(`/trainer/${id}/select-week`)}
+          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+        >
+          📅 Cambio Settimana / Giorno
+        </button>
       </div>
 
       <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
-        {DAYS.map((day) => (
-          <button
-            key={day.key}
-            onClick={() => setActiveDay(day.key)}
-            className={`flex-1 min-w-[65px] py-3 rounded-xl font-black text-[10px] border transition-all ${
-              activeDay === day.key
-                ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-500'
-            }`}
-          >
-            {day.label}
-          </button>
-        ))}
+        <div className="flex-1 min-w-[65px] py-3 rounded-xl font-black text-[10px] border bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20 text-center flex items-center justify-center">
+          Settimana {week} • {activeDay}
+        </div>
       </div>
 
       <div className="p-4 space-y-8 max-w-xl mx-auto mt-4">
