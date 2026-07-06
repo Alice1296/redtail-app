@@ -45,4 +45,44 @@ setup-trainer.js
 create-trainer-user.js
 fix-trainer-user.js
 investigate-trainer.js
+auto-setup.js
+delete-elebods-debug.js
+delete-elebods.js
+delete-user-account.js
+execute-setup.js
+final-migrate.js
+full-setup.js
+list-users.js
+migrate-existing-users.js
+setup-and-migrate.js
+setup-db-direct.js
+setup-final-notifications.js
+setup-instructions.js
+setup-notifications-complete-week.js
+setup-notifications-db.js
+setup-notifications-manual.js
 
+# Migrazioni SQL una tantum gia' applicate manualmente
+final-setup-notifications.sql
+notifications-complete-week.sql
+notifications-setup.sql
+setup-sql.sql
+user-pr-setup.sql
+
+# Note/doc di riferimento non parte dell'app (vedi app/components/WorkoutParser.tsx per il codice reale)
+WORKOUT_PARSER_ARCHITECTURE.md
+WORKOUT_PARSER_EXAMPLE.tsx
+WORKOUT_PARSER_GUIDE.md
+WORKOUT_PARSER_INTEGRATION.ts
+WORKOUT_PARSER_TESTS.ts
+WORKOUT_PARSER_TROUBLESHOOTING.md
+
+# Log locali
+build.log
+lint-log.txt
+lint-log-utf8.txt
+.lint-output.txt
+live-reset.html
+
+# Deploy manuale separato (repo git annidata propria, non gestita da qui)
+.deploy-minimal

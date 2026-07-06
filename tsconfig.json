@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "WORKOUT_PARSER_*.ts", "WORKOUT_PARSER_*.tsx"]
 }

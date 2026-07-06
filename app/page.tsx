@@ -51,7 +51,14 @@ export default function LoginPage() {
         password,
       })
 
-      if (authError) throw new Error('Email o password non corrette.')
+      if (authError) {
+        const message =
+          authError.message &&
+          !/invalid login credentials|password|email/i.test(authError.message)
+            ? authError.message
+            : 'Email o password non corrette.'
+        throw new Error(message)
+      }
 
       if (!authData.user) throw new Error('Impossibile recuperare i dati utente.')
 

@@ -61,92 +61,31 @@ export default function CommunityPage() {
   const loadCommunity = async () => {
     setLoading(true)
 
-    const { data: scoreData } = await supabase
-      .from('workout_scores')
-      .select('*')
-      .eq('week_number', Number(week))
-      .eq('day', activeDay)
+    const response = await fetch(
+      `/api/community?week=${Number(week)}&day=${activeDay}`
+    )
+    const payload = await response.json()
 
-    const nextScores = ((scoreData || []) as ScoreRow[]).sort((left, right) => {
-      const activeScoreType = left.score_type || right.score_type
-
-      if (activeScoreType === 'time') {
-        return Number(left.score_value) - Number(right.score_value)
-      }
-
-      return Number(right.score_value) - Number(left.score_value)
-    })
-
-    setScores(nextScores)
-
-    const { data: workoutData } = await supabase
-      .from('workouts')
-      .select('coach_notes')
-      .eq('week_number', Number(week))
-      .eq('day', activeDay)
-      .limit(1)
-      .maybeSingle()
-
-    let coachNotes: Record<string, string | null> = {}
-
-    try {
-      coachNotes =
-        typeof workoutData?.coach_notes === 'string'
-          ? JSON.parse(workoutData.coach_notes || '{}')
-          : workoutData?.coach_notes || {}
-    } catch {}
-
-    setWorkoutScoreLabel(coachNotes.wod_score_label || '')
-
-    const scoreIds = nextScores.map((score) => score.id)
-    const athleteIds = nextScores.map((score) => score.client_id)
-
-    if (scoreIds.length === 0) {
+    if (!response.ok) {
+      setScores([])
       setReactions([])
       setComments([])
       setProfiles({})
+      setWorkoutScoreLabel('')
       setLoading(false)
       return
     }
 
-    const [{ data: reactionData }, { data: commentData }] = await Promise.all([
-      supabase.from('score_reactions').select('*').in('score_id', scoreIds),
-      supabase
-        .from('score_comments')
-        .select('*')
-        .in('score_id', scoreIds)
-        .order('created_at', { ascending: true }),
-    ])
+    setScores((payload.scores || []) as ScoreRow[])
+    setReactions((payload.reactions || []) as ReactionRow[])
+    setComments((payload.comments || []) as CommentRow[])
+    setWorkoutScoreLabel(payload.workoutScoreLabel || '')
 
-    const typedReactions = (reactionData || []) as ReactionRow[]
-    const typedComments = (commentData || []) as CommentRow[]
-
-    setReactions(typedReactions)
-    setComments(typedComments)
-
-    const profileIds = Array.from(
-      new Set([
-        ...athleteIds,
-        ...typedReactions.map((reaction) => reaction.user_id),
-        ...typedComments.map((comment) => comment.author_id),
-      ])
-    )
-
-    if (profileIds.length > 0) {
-      const { data: profileRows } = await supabase
-        .from('profiles')
-        .select('id, email, first_name, last_name, role')
-        .in('id', profileIds)
-
-      const profileMap: Record<string, ProfileRow> = {}
-
-      ;((profileRows || []) as ProfileRow[]).forEach((profile) => {
-        profileMap[profile.id] = profile
-      })
-
-      setProfiles(profileMap)
-    }
-
+    const profileMap: Record<string, ProfileRow> = {}
+    ;((payload.profiles || []) as ProfileRow[]).forEach((profile) => {
+      profileMap[profile.id] = profile
+    })
+    setProfiles(profileMap)
     setLoading(false)
   }
 
@@ -187,29 +126,42 @@ export default function CommunityPage() {
   async function toggleReaction(scoreId: string) {
     if (!userId) return
 
-    const existingReaction = reactions.find(
-      (reaction) => reaction.score_id === scoreId && reaction.user_id === userId
-    )
+    const targetScore = scores.find((score) => score.id === scoreId)
 
-    if (existingReaction) {
-      await supabase.from('score_reactions').delete().eq('id', existingReaction.id)
-    } else {
-      await supabase.from('score_reactions').insert({
-        score_id: scoreId,
-        user_id: userId,
-      })
-    }
+    if (!targetScore) return
+
+    await fetch('/api/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'toggle-reaction',
+        week,
+        day: activeDay,
+        scoreId,
+        scoreOwnerId: targetScore.client_id,
+      }),
+    })
 
     await loadCommunity()
   }
 
   async function addComment(scoreId: string) {
     if (!userId || !commentDrafts[scoreId]?.trim()) return
+    const targetScore = scores.find((score) => score.id === scoreId)
 
-    await supabase.from('score_comments').insert({
-      score_id: scoreId,
-      author_id: userId,
-      comment: commentDrafts[scoreId].trim(),
+    if (!targetScore) return
+
+    await fetch('/api/community', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add-comment',
+        week,
+        day: activeDay,
+        scoreId,
+        scoreOwnerId: targetScore.client_id,
+        comment: commentDrafts[scoreId].trim(),
+      }),
     })
 
     setCommentDrafts((current) => ({

@@ -41,7 +41,7 @@ function createAuthedClients(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const { authClient } = createAuthedClients(req)
+    const { authClient, adminClient } = createAuthedClients(req)
 
     const {
       data: { user },
@@ -53,8 +53,24 @@ export async function GET(req: NextRequest) {
 
     const clientId = req.nextUrl.searchParams.get('clientId') || user.id
 
+    if (clientId !== user.id) {
+      const { data: profile, error: profileError } = await adminClient
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (profileError) {
+        throw profileError
+      }
+
+      if (profile?.role !== 'trainer') {
+        return NextResponse.json({ error: 'Permessi insufficienti' }, { status: 403 })
+      }
+    }
+
     // Query per ottenere tutte le settimane con dati e l'ultima modifica
-    const { data: workoutData, error: workoutError } = await authClient
+    const { data: workoutData, error: workoutError } = await adminClient
       .from('workouts')
       .select('week_number, updated_at, created_at')
       .eq('client_id', clientId)

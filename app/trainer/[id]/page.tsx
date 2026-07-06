@@ -313,6 +313,15 @@ function TrainerPage({ id }: { id: string }) {
     }
 
     setLoading(false)
+    return !error
+  }
+
+  async function saveWorkoutAndReturn() {
+    const success = await saveWorkout()
+
+    if (success) {
+      router.push(`/trainer/${id}/select-week`)
+    }
   }
 
   async function handleLogout() {
@@ -838,6 +847,14 @@ function TrainerPage({ id }: { id: string }) {
             className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest shadow-xl shadow-red-600/40 active:scale-95 transition-all disabled:opacity-50"
           >
             {loading ? 'Salvataggio...' : saved ? 'Programma inviato' : 'Salva programma'}
+          </button>
+
+          <button
+            onClick={saveWorkoutAndReturn}
+            disabled={loading}
+            className="w-full max-w-xl mx-auto block bg-zinc-800 border border-zinc-700 p-4 rounded-2xl font-black uppercase italic tracking-widest active:scale-95 transition-all disabled:opacity-50 hover:border-red-600"
+          >
+            Salva e torna a Step 1
           </button>
 
           {saved && saveMessage && (

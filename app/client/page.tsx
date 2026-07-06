@@ -1273,9 +1273,9 @@ function ClientPage() {
       <div className="p-4 bg-zinc-900 border-b border-zinc-800">
         <button
           onClick={() => router.push('/client/select-week')}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all active:scale-95"
         >
-          📅 Cambio Settimana / Giorno
+          Torna a selezione settimana
         </button>
       </div>
 

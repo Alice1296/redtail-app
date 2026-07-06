@@ -2,12 +2,26 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
   // 1. Creiamo la risposta base
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
+
+  const hasSupabaseCookie = request.cookies
+    .getAll()
+    .some((cookie) => cookie.name.startsWith('sb-'))
+
+  if (
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/register') ||
+    (pathname === '/' && !hasSupabaseCookie)
+  ) {
+    return response
+  }
 
   // 2. Inizializziamo Supabase con una gestione cookie ultra-precisa
   const supabase = createServerClient(
@@ -35,14 +49,8 @@ export async function middleware(request: NextRequest) {
 
   // 3. Recuperiamo l'utente (usiamo getUser che è più sicuro di getSession)
   const { data: { user } } = await supabase.auth.getUser()
-  const pathname = request.nextUrl.pathname
 
   // --- LOGICA DI REINDIRIZZAMENTO ---
-
-  // A. Escludi la pagina di reset password dai controlli
-  if (pathname.startsWith('/reset-password')) {
-    return response
-  }
 
   // B. Se non sei loggato e provi a entrare nelle aree private -> Vai alla Home
   if (

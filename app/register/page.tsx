@@ -2,10 +2,14 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Image from 'next/image'
+import Link from 'next/link'
 
 export default function RegisterPage() {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [lastAttempt, setLastAttempt] = useState(0)
@@ -24,8 +28,7 @@ export default function RegisterPage() {
     }
     setLastAttempt(now)
     
-    // 1. Eseguiamo SOLO il signUp. 
-    // Il Trigger SQL su Supabase creerà automaticamente la riga in 'profiles'.
+    // 1. Eseguiamo il signUp
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -39,12 +42,27 @@ export default function RegisterPage() {
       } else {
         setMessage(`Errore: ${error.message}`)
       }
-    } else {
-      setMessage("Registrazione completata! Reindirizzamento...")
-      // Piccola attesa e poi torniamo alla home per il login
-      setTimeout(() => {
-        window.location.href = '/'
-      }, 2000)
+    } else if (data.user) {
+      // 2. Salviamo il profilo con nome e cognome
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          email,
+          first_name: firstName,
+          last_name: lastName,
+          updated_at: new Date().toISOString(),
+        })
+
+      if (profileError) {
+        setMessage(`Errore salvataggio profilo: ${profileError.message}`)
+      } else {
+        setMessage("Registrazione completata! Reindirizzamento...")
+        // Piccola attesa e poi torniamo alla home per il login
+        setTimeout(() => {
+          window.location.href = '/'
+        }, 2000)
+      }
     }
     setLoading(false)
   }
@@ -61,6 +79,22 @@ export default function RegisterPage() {
 
         <form onSubmit={handleRegister} className="space-y-4">
           <input
+            type="text"
+            placeholder="Nome"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
+            required
+          />
+          <input
+            type="text"
+            placeholder="Cognome"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
+            required
+          />
+          <input
             type="email"
             placeholder="La tua Email"
             value={email}
@@ -68,14 +102,24 @@ export default function RegisterPage() {
             className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
             required
           />
-          <input
-            type="password"
-            placeholder="Password (min. 6 caratteri)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-black border border-zinc-800 p-4 rounded-xl outline-none focus:border-red-600 transition-all text-white"
-            required
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password (min. 6 caratteri)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-black border border-zinc-800 p-4 pr-20 rounded-xl outline-none focus:border-red-600 transition-all text-white"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wide text-zinc-400 transition-colors hover:text-red-400"
+              aria-label={showPassword ? 'Nascondi password' : 'Mostra password'}
+            >
+              {showPassword ? 'Nascondi' : 'Mostra'}
+            </button>
+          </div>
           <button
             disabled={loading}
             className="w-full bg-red-600 py-4 rounded-xl font-black uppercase italic tracking-widest hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-600/20"
@@ -97,13 +141,13 @@ export default function RegisterPage() {
         {message.includes('già registrata') && (
           <div className="text-center text-xs space-y-2">
             <p className="text-zinc-400">Hai già un account?</p>
-            <a href="/" className="inline-block text-red-500 font-bold uppercase hover:text-red-400 transition-colors">
+            <Link href="/" className="inline-block text-red-500 font-bold uppercase hover:text-red-400 transition-colors">
               Vai al Login →
-            </a>
+            </Link>
             <p className="text-zinc-600 text-[10px]">oppure</p>
-            <a href="/reset-password" className="inline-block text-yellow-500 font-bold uppercase hover:text-yellow-400 transition-colors">
+            <Link href="/reset-password" className="inline-block text-yellow-500 font-bold uppercase hover:text-yellow-400 transition-colors">
               Reset Password →
-            </a>
+            </Link>
           </div>
         )}
       </div>

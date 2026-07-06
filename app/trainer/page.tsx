@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import { WeekSelector } from '@/app/components/WeekSelector'
 
 type ClientProfile = {
   id: string
@@ -129,10 +130,17 @@ export default function TrainerClientsPage() {
       setError(null)
       setSendFeedback(null)
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
       const response = await fetch('/api/admin/delete-client', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
         },
         body: JSON.stringify({ clientId: client.id }),
       })
@@ -216,23 +224,6 @@ export default function TrainerClientsPage() {
             <h1 className="text-3xl font-black text-red-600 uppercase italic tracking-tighter">
               Atleti Redtail
             </h1>
-            <div className="flex items-center gap-4 mt-2">
-              <button
-                onClick={() => setCurrentWeek((week) => Math.max(1, week - 1))}
-                className="text-zinc-500 hover:text-white text-sm font-black"
-              >
-                {'<'}
-              </button>
-              <span className="text-xs font-black text-zinc-400 uppercase">
-                Settimana {currentWeek}
-              </span>
-              <button
-                onClick={() => setCurrentWeek((week) => week + 1)}
-                className="text-zinc-500 hover:text-white text-sm font-black"
-              >
-                {'>'}
-              </button>
-            </div>
           </div>
 
           <button
@@ -241,6 +232,14 @@ export default function TrainerClientsPage() {
           >
             Logout
           </button>
+        </div>
+
+        <div className="mb-6">
+          <WeekSelector
+            currentWeek={currentWeek}
+            onWeekChange={setCurrentWeek}
+            maxVisibleWeeks={8}
+          />
         </div>
 
         {error && (
@@ -292,7 +291,7 @@ export default function TrainerClientsPage() {
                 >
                   <button
                     type="button"
-                    onClick={() => router.push(`/trainer/${client.id}`)}
+                    onClick={() => router.push(`/trainer/${client.id}/select-week`)}
                     className="flex flex-1 items-center justify-between gap-4 text-left"
                     aria-label={`Apri profilo di ${getClientLabel(client)}`}
                   >
