@@ -329,6 +329,15 @@ function TrainerPage({ id }: { id: string }) {
     router.push('/')
   }
 
+  function handleDayChange(day: string) {
+    if (day === activeDay) {
+      return
+    }
+
+    setActiveDay(day)
+    router.replace(`/trainer/${id}?week=${week}&day=${day}`, { scroll: false })
+  }
+
   async function deleteClientVideo(section: string, videoUrl: string) {
     if (!id || !confirm('Eliminare il video dell atleta?')) {
       return
@@ -519,16 +528,26 @@ function TrainerPage({ id }: { id: string }) {
       <div className="p-4 bg-zinc-900 border-b border-zinc-800 flex gap-2">
         <button
           onClick={() => router.push(`/trainer/${id}/select-week`)}
-          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all active:scale-95"
         >
-          📅 Cambio Settimana / Giorno
+          Cambia Settimana (Settimana {week})
         </button>
       </div>
 
-      <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
-        <div className="flex-1 min-w-[65px] py-3 rounded-xl font-black text-[10px] border bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20 text-center flex items-center justify-center">
-          Settimana {week} • {activeDay}
-        </div>
+      <div className="flex gap-1 p-2 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
+        {DAYS.map((day) => (
+          <button
+            key={day.key}
+            onClick={() => handleDayChange(day.key)}
+            className={`flex-1 min-w-[55px] py-3 rounded-xl font-black text-[10px] border text-center transition-all ${
+              activeDay === day.key
+                ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-red-600 hover:text-red-400'
+            }`}
+          >
+            {day.label}
+          </button>
+        ))}
       </div>
 
       <div className="p-4 space-y-8 max-w-xl mx-auto mt-4">

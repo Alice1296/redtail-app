@@ -1160,6 +1160,15 @@ function ClientPage() {
     router.push('/')
   }
 
+  function handleDayChange(day: DayKey) {
+    if (day === activeDay) {
+      return
+    }
+
+    setActiveDay(day)
+    router.replace(`/client?week=${week}&day=${day}`, { scroll: false })
+  }
+
   async function handleVideoUpload(section: string, file: File) {
     if (!user) {
       return
@@ -1281,16 +1290,17 @@ function ClientPage() {
 
       <div className="flex gap-1 p-2 bg-zinc-900 overflow-x-auto no-scrollbar border-b border-white/5">
         {DAYS.map((day) => (
-          <div
+          <button
             key={day.key}
-            className={`flex-1 min-w-[55px] py-3 rounded-xl font-black text-[10px] border text-center ${
+            onClick={() => handleDayChange(day.key)}
+            className={`flex-1 min-w-[55px] py-3 rounded-xl font-black text-[10px] border text-center transition-all ${
               activeDay === day.key
                 ? 'bg-red-600 border-red-500 text-white'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-red-600 hover:text-red-400'
             }`}
           >
             {day.label}
-          </div>
+          </button>
         ))}
       </div>
 
