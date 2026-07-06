@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import { WeekSelector } from '@/app/components/WeekSelector'
 import {
   DAYS,
   DEFAULT_MAX_LIFTS,
@@ -1249,25 +1250,12 @@ export default function ClientPage() {
         </button>
       </div>
 
-      <div className="flex justify-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
-        <button
-          onClick={() => setWeek((value) => Math.max(1, value - 1))}
-          className="text-red-500 text-2xl font-bold"
-        >
-          {'<'}
-        </button>
-        <div className="text-center">
-          <span className="block text-[10px] text-zinc-500 uppercase font-black">
-            Week
-          </span>
-          <span className="text-xl font-black text-red-500 italic">{week}</span>
-        </div>
-        <button
-          onClick={() => setWeek((value) => value + 1)}
-          className="text-red-500 text-2xl font-bold"
-        >
-          {'>'}
-        </button>
+      <div className="p-4 bg-zinc-900 border-b border-zinc-800">
+        <WeekSelector
+          currentWeek={week}
+          onWeekChange={setWeek}
+          maxVisibleWeeks={12}
+        />
       </div>
 
       <div className="flex gap-1 p-2 bg-zinc-900 overflow-x-auto no-scrollbar border-b border-white/5">

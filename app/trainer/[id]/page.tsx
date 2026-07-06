@@ -3,12 +3,29 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useParams, useRouter } from 'next/navigation'
-import { DAYS, SCORE_TYPE_OPTIONS, type ScoreType } from '@/lib/community'
+import { WeekSelector } from '@/app/components/WeekSelector'
+import { WorkoutParser } from '@/app/components/WorkoutParser'
+import {
+  DAYS,
+  DEFAULT_MAX_LIFTS,
+  SCORE_TYPE_OPTIONS,
+  TIMER_DURATION_OPTIONS,
+  TIMER_PHASE_OPTIONS,
+  WOD_MODE_OPTIONS,
+  createTimerSegment,
+  formatTimerDuration,
+  normalizeWodConfig,
+  type ScoreType,
+  type WodConfig,
+  type WodMode,
+  type WodTimerPhase,
+} from '@/lib/community'
 
 type WorkoutForm = {
   mobility: string
   strength: string
   wod: string
+  wod_timer_config: WodConfig | null
   wod_score_type: ScoreType | ''
   wod_score_label: string
   coach_notes_mobility: string
@@ -23,10 +40,32 @@ type ClientLog = {
   video_urls?: string[] | null
 }
 
+type VisibleVideoState = Record<string, string[]>
+
+type CleanClientVideosResponse = {
+  logs?: ClientLog[]
+}
+
+type MaxRow = {
+  value: number
+  unit: string
+}
+
+function getInitialTimerConfig(value?: WodConfig | null) {
+  return (
+    normalizeWodConfig(value) || {
+      mode: 'Free' as WodMode,
+      description: '',
+      segments: [],
+    }
+  )
+}
+
 const EMPTY_FORM: WorkoutForm = {
   mobility: '',
   strength: '',
   wod: '',
+  wod_timer_config: null,
   wod_score_type: '',
   wod_score_label: '',
   coach_notes_mobility: '',
@@ -43,9 +82,12 @@ export default function TrainerPage() {
   const [clientName, setClientName] = useState('')
   const [form, setForm] = useState<WorkoutForm>(EMPTY_FORM)
   const [logs, setLogs] = useState<Record<string, ClientLog>>({})
+  const [maxValues, setMaxValues] = useState<Record<string, MaxRow>>({})
+  const [visibleVideos, setVisibleVideos] = useState<VisibleVideoState>({})
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [timerAppliedMessage, setTimerAppliedMessage] = useState('')
 
   useEffect(() => {
     const checkUser = async () => {
@@ -80,7 +122,19 @@ export default function TrainerPage() {
 
       setClientName(fullName)
       setLogs({})
+      setMaxValues({})
+      setVisibleVideos({})
       setForm(EMPTY_FORM)
+
+      try {
+        const maxesResponse = await fetch(`/api/maxes?clientId=${id}`)
+        if (maxesResponse.ok) {
+          const maxesPayload = await maxesResponse.json()
+          setMaxValues((maxesPayload.values || {}) as Record<string, MaxRow>)
+        }
+      } catch (error) {
+        console.error('Errore caricamento massimali atleta:', error)
+      }
 
       const { data: workoutData } = await supabase
         .from('workouts')
@@ -91,15 +145,36 @@ export default function TrainerPage() {
         .maybeSingle()
 
       if (workoutData) {
+        let legacyTimerConfig: WodConfig | null = null
+
+        if (
+          typeof workoutData.wod === 'string' &&
+          workoutData.wod.trim().startsWith('{')
+        ) {
+          try {
+            legacyTimerConfig = JSON.parse(workoutData.wod) as WodConfig
+          } catch {}
+        }
+
         const coachNotes =
           typeof workoutData.coach_notes === 'string'
             ? JSON.parse(workoutData.coach_notes || '{}')
             : workoutData.coach_notes || {}
 
         setForm({
-          mobility: workoutData.mobility || '',
-          strength: workoutData.strength || '',
-          wod: workoutData.wod || '',
+          mobility:
+            typeof workoutData.mobility === 'string' ? workoutData.mobility : '',
+          strength:
+            typeof workoutData.strength === 'string' ? workoutData.strength : '',
+          wod:
+            legacyTimerConfig?.description ||
+            (typeof workoutData.wod === 'string' &&
+            !workoutData.wod.trim().startsWith('{')
+              ? workoutData.wod
+              : ''),
+          wod_timer_config: getInitialTimerConfig(
+            coachNotes.wod_timer_config || legacyTimerConfig
+          ),
           wod_score_type: coachNotes.wod_score_type || '',
           wod_score_label: coachNotes.wod_score_label || '',
           coach_notes_mobility: coachNotes.mobility || '',
@@ -115,13 +190,59 @@ export default function TrainerPage() {
         .eq('week_number', Number(week))
         .eq('day', activeDay)
 
+      let sanitizedLogs = ((logData || []) as ClientLog[]).map((log) => ({
+        ...log,
+      }))
+
+      try {
+        const cleanupResponse = await fetch('/api/admin/clean-client-videos', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientId: id,
+            weekNumber: Number(week),
+            day: activeDay,
+          }),
+        })
+
+        if (cleanupResponse.ok) {
+          const cleanupPayload =
+            (await cleanupResponse.json()) as CleanClientVideosResponse
+
+          if (Array.isArray(cleanupPayload.logs)) {
+            sanitizedLogs = cleanupPayload.logs
+          }
+        }
+      } catch (error) {
+        console.error('Errore pulizia video atleta:', error)
+      }
+
       const map: Record<string, ClientLog> = {}
 
-      ;((logData || []) as ClientLog[]).forEach((log) => {
+      sanitizedLogs.forEach((log) => {
         map[log.section] = log
       })
 
       setLogs(map)
+
+      const nextVisibleVideos: VisibleVideoState = {}
+
+      Object.entries(map).forEach(([section, log]) => {
+        const validUrls =
+          Array.isArray(log.video_urls) && log.video_urls.length > 0
+            ? log.video_urls
+            : log.video_url
+              ? [log.video_url]
+              : []
+
+        if (validUrls.length > 0) {
+          nextVisibleVideos[section] = validUrls
+        }
+      })
+
+      setVisibleVideos(nextVisibleVideos)
     }
 
     loadPageData()
@@ -129,6 +250,11 @@ export default function TrainerPage() {
 
   async function saveWorkout() {
     setLoading(true)
+
+    const normalizedTimerConfig = normalizeWodConfig({
+      ...(form.wod_timer_config || { mode: 'Free' as WodMode }),
+      description: form.wod,
+    })
 
     const payload = {
       client_id: id,
@@ -143,6 +269,12 @@ export default function TrainerPage() {
         wod: form.coach_notes_wod,
         wod_score_type: form.wod_score_type || null,
         wod_score_label: form.wod_score_label || null,
+        wod_timer_config:
+          normalizedTimerConfig && normalizedTimerConfig.mode !== 'Free'
+            ? normalizedTimerConfig
+            : normalizedTimerConfig?.segments?.length
+              ? normalizedTimerConfig
+              : null,
       }),
     }
 
@@ -167,6 +299,151 @@ export default function TrainerPage() {
     await supabase.auth.signOut()
     router.push('/')
   }
+
+  async function deleteClientVideo(section: string, videoUrl: string) {
+    if (!id || !confirm('Eliminare il video dell atleta?')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/delete-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: id,
+          section,
+          weekNumber: Number(week),
+          day: activeDay,
+          videoUrl,
+        }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Errore eliminazione video')
+      }
+
+      setVisibleVideos((current) => ({
+        ...current,
+        [section]: (current[section] || []).filter((value) => value !== videoUrl),
+      }))
+      setLogs((current) => {
+        const currentLog = current[section]
+        if (!currentLog) {
+          return current
+        }
+
+        const nextVideoUrls = (currentLog.video_urls || []).filter(
+          (value) => value !== videoUrl
+        )
+
+        return {
+          ...current,
+          [section]: {
+            ...currentLog,
+            video_url: null,
+            video_urls: nextVideoUrls.length > 0 ? nextVideoUrls : null,
+          },
+        }
+      })
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : 'Errore eliminazione video')
+    }
+  }
+
+  function updateTimerMode(mode: WodMode) {
+    setForm((current) => {
+      const timerConfig = getInitialTimerConfig(current.wod_timer_config)
+
+      return {
+        ...current,
+        wod_timer_config: {
+          ...timerConfig,
+          mode,
+          segments:
+            mode === 'Free'
+              ? []
+              : timerConfig.segments && timerConfig.segments.length > 0
+                ? timerConfig.segments
+                : [createTimerSegment('work', 6 * 60)],
+        },
+      }
+    })
+  }
+
+  function addTimerSegment(phase: WodTimerPhase) {
+    setForm((current) => {
+      const timerConfig = getInitialTimerConfig(current.wod_timer_config)
+
+      return {
+        ...current,
+        wod_timer_config: {
+          ...timerConfig,
+          segments: [...(timerConfig.segments || []), createTimerSegment(phase, 60)],
+        },
+      }
+    })
+  }
+
+  function updateTimerSegment(
+    segmentId: string,
+    updates: Partial<{
+      phase: WodTimerPhase
+      durationSeconds: number
+      label: string
+    }>
+  ) {
+    setForm((current) => {
+      const timerConfig = getInitialTimerConfig(current.wod_timer_config)
+
+      return {
+        ...current,
+        wod_timer_config: {
+          ...timerConfig,
+          segments: (timerConfig.segments || []).map((segment) =>
+            segment.id === segmentId ? { ...segment, ...updates } : segment
+          ),
+        },
+      }
+    })
+  }
+
+  function removeTimerSegment(segmentId: string) {
+    setForm((current) => {
+      const timerConfig = getInitialTimerConfig(current.wod_timer_config)
+
+      return {
+        ...current,
+        wod_timer_config: {
+          ...timerConfig,
+          segments: (timerConfig.segments || []).filter(
+            (segment) => segment.id !== segmentId
+          ),
+        },
+      }
+    })
+  }
+
+  function applyParsedWorkoutTimer(config: WodConfig) {
+    setForm((current) => ({
+      ...current,
+      wod: config.description || current.wod,
+      wod_timer_config: getInitialTimerConfig(config),
+    }))
+    setSaved(false)
+    setTimerAppliedMessage('Timer riconosciuto: salva il programma per inviarlo.')
+
+    setTimeout(() => {
+      setTimerAppliedMessage('')
+    }, 3000)
+  }
+
+  const timerConfig = getInitialTimerConfig(form.wod_timer_config)
+  const timerSegments = timerConfig.segments || []
+  const totalTimerSeconds = timerSegments.reduce(
+    (total, segment) => total + segment.durationSeconds,
+    0
+  )
 
   return (
     <div className="min-h-screen bg-black text-white pb-32 font-sans">
@@ -210,25 +487,13 @@ export default function TrainerPage() {
         </button>
       </div>
 
-      <div className="flex justify-center items-center gap-10 p-4 bg-zinc-900 border-b border-zinc-800">
-        <button
-          onClick={() => setWeek((value) => Math.max(1, value - 1))}
-          className="text-red-500 text-2xl font-bold p-2 active:scale-125 transition-transform"
-        >
-          {'<'}
-        </button>
-        <div className="text-center">
-          <span className="block text-[10px] text-zinc-500 uppercase font-black tracking-widest">
-            Settimana
-          </span>
-          <span className="text-xl font-black text-red-500 italic">{week}</span>
-        </div>
-        <button
-          onClick={() => setWeek((value) => value + 1)}
-          className="text-red-500 text-2xl font-bold p-2 active:scale-125 transition-transform"
-        >
-          {'>'}
-        </button>
+      <div className="p-4 bg-zinc-900 border-b border-zinc-800">
+        <WeekSelector
+          currentWeek={week}
+          onWeekChange={setWeek}
+          clientId={id}
+          maxVisibleWeeks={12}
+        />
       </div>
 
       <div className="flex gap-2 p-3 bg-zinc-900 overflow-x-auto sticky top-[68px] z-40 no-scrollbar border-b border-white/5">
@@ -248,6 +513,39 @@ export default function TrainerPage() {
       </div>
 
       <div className="p-4 space-y-8 max-w-xl mx-auto mt-4">
+        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-[11px] font-black uppercase tracking-widest text-red-500">
+              Massimali atleta
+            </p>
+            <span className="text-[10px] font-black uppercase text-zinc-600">
+              {Object.keys(maxValues).length} salvati
+            </span>
+          </div>
+
+          {Object.keys(maxValues).length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {DEFAULT_MAX_LIFTS.filter((lift) => maxValues[lift]).map((lift) => (
+                <div
+                  key={lift}
+                  className="rounded-xl border border-zinc-800 bg-black/40 p-3"
+                >
+                  <p className="truncate text-[10px] font-black uppercase text-zinc-500">
+                    {lift}
+                  </p>
+                  <p className="mt-1 text-lg font-black italic text-white">
+                    {maxValues[lift].value} {maxValues[lift].unit}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-2xl border border-dashed border-zinc-800 p-4 text-center text-xs font-bold uppercase text-zinc-600">
+              Nessun massimale salvato
+            </p>
+          )}
+        </div>
+
         {['mobility', 'strength', 'wod'].map((section) => (
           <div
             key={section}
@@ -268,40 +566,165 @@ export default function TrainerPage() {
             />
 
             {section === 'wod' && (
-              <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  Score per leaderboard
-                </p>
-
-                <select
-                  value={form.wod_score_type}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      wod_score_type: event.target.value as ScoreType | '',
-                    }))
-                  }
-                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
-                >
-                  <option value="">Nessun punteggio</option>
-                  {SCORE_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  value={form.wod_score_label}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      wod_score_label: event.target.value,
-                    }))
-                  }
-                  placeholder="Es. Time cap 12', Max reps, Peso migliore..."
-                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200 placeholder:text-zinc-600"
+              <div className="space-y-4">
+                <WorkoutParser
+                  initialText={form.wod}
+                  onApply={applyParsedWorkoutTimer}
                 />
+
+                {timerAppliedMessage && (
+                  <p className="rounded-xl border border-blue-600/40 bg-blue-600/10 p-3 text-center text-[10px] font-black uppercase tracking-wide text-blue-300">
+                    {timerAppliedMessage}
+                  </p>
+                )}
+
+                <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Timer WOD
+                    </p>
+                    {timerSegments.length > 0 && (
+                      <span className="rounded-full border border-red-600/40 bg-red-600/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-red-400">
+                        {formatTimerDuration(totalTimerSeconds)}
+                      </span>
+                    )}
+                  </div>
+
+                  <select
+                    value={timerConfig.mode}
+                    onChange={(event) => updateTimerMode(event.target.value as WodMode)}
+                    className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
+                  >
+                    {WOD_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <p className="text-xs text-zinc-500">
+                    Crea una sequenza di lavoro e recupero con scatti da 15 secondi.
+                    Esempio: `6&apos; lavoro / 2&apos; recupero / 6&apos; lavoro`.
+                  </p>
+
+                  {timerConfig.mode !== 'Free' && (
+                    <div className="space-y-3">
+                      {timerSegments.length > 0 ? (
+                        timerSegments.map((segment, index) => (
+                          <div
+                            key={segment.id}
+                            className="grid grid-cols-[1fr_1fr_auto] gap-2 rounded-xl border border-zinc-800 bg-zinc-950/70 p-3"
+                          >
+                            <select
+                              value={segment.phase}
+                              onChange={(event) =>
+                                updateTimerSegment(segment.id, {
+                                  phase: event.target.value as WodTimerPhase,
+                                  label:
+                                    event.target.value === 'rest'
+                                      ? 'Recupero'
+                                      : 'Lavoro',
+                                })
+                              }
+                              className="bg-black border border-zinc-800 p-3 rounded-lg text-xs outline-none focus:border-red-600 text-zinc-200"
+                            >
+                              {TIMER_PHASE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={segment.durationSeconds}
+                              onChange={(event) =>
+                                updateTimerSegment(segment.id, {
+                                  durationSeconds: Number(event.target.value),
+                                })
+                              }
+                              className="bg-black border border-zinc-800 p-3 rounded-lg text-xs outline-none focus:border-red-600 text-zinc-200"
+                            >
+                              {TIMER_DURATION_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              type="button"
+                              onClick={() => removeTimerSegment(segment.id)}
+                              className="rounded-lg border border-red-600/40 bg-red-600/10 px-3 text-[10px] font-black uppercase tracking-wide text-red-400 hover:bg-red-600/20"
+                            >
+                              Elimina
+                            </button>
+
+                            <div className="col-span-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600">
+                              Blocco {index + 1}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+                          Nessun blocco configurato.
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => addTimerSegment('work')}
+                          className="flex-1 rounded-xl border border-green-600/40 bg-green-600/10 p-3 text-[10px] font-black uppercase tracking-wide text-green-400 hover:bg-green-600/20"
+                        >
+                          Aggiungi lavoro
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addTimerSegment('rest')}
+                          className="flex-1 rounded-xl border border-yellow-600/40 bg-yellow-600/10 p-3 text-[10px] font-black uppercase tracking-wide text-yellow-400 hover:bg-yellow-600/20"
+                        >
+                          Aggiungi recupero
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                    Score per leaderboard
+                  </p>
+
+                  <select
+                    value={form.wod_score_type}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        wod_score_type: event.target.value as ScoreType | '',
+                      }))
+                    }
+                    className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
+                  >
+                    <option value="">Nessun punteggio</option>
+                    {SCORE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    value={form.wod_score_label}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        wod_score_label: event.target.value,
+                      }))
+                    }
+                    placeholder="Es. Time cap 12', Max reps, Peso migliore..."
+                    className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200 placeholder:text-zinc-600"
+                  />
+                </div>
               </div>
             )}
 
@@ -320,14 +743,13 @@ export default function TrainerPage() {
                   </p>
                 )}
 
-                {Array.isArray(logs[section].video_urls) &&
-                  logs[section].video_urls.length > 0 && (
+                {(visibleVideos[section]?.length || 0) > 0 && (
                     <div className="space-y-3">
                       <p className="text-[10px] font-black text-green-400 uppercase italic">
-                        Video caricati ({logs[section].video_urls.length})
+                        Video caricati ({visibleVideos[section].length})
                       </p>
 
-                      {logs[section].video_urls.map((videoUrl, index) => (
+                      {visibleVideos[section].map((videoUrl, index) => (
                         <div
                           key={index}
                           className="rounded-xl overflow-hidden border border-zinc-700 bg-black shadow-2xl"
@@ -336,49 +758,34 @@ export default function TrainerPage() {
                             <span className="text-[10px] font-bold text-zinc-300">
                               Video {index + 1}
                             </span>
-                            <a
-                              href={videoUrl}
-                              download
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 transition-all active:scale-95"
-                            >
-                              Scarica
-                            </a>
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={videoUrl}
+                                download
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 transition-all active:scale-95"
+                              >
+                                Scarica
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => deleteClientVideo(section, videoUrl)}
+                                className="rounded border border-red-600 bg-red-600/10 px-2 py-1 text-[10px] font-bold text-red-400 transition-all hover:bg-red-600/20 active:scale-95"
+                              >
+                                Elimina
+                              </button>
+                            </div>
                           </div>
                           <video
                             src={videoUrl}
                             controls
+                            playsInline
+                            preload="metadata"
                             className="w-full aspect-video object-contain"
                           />
                         </div>
                       ))}
-                    </div>
-                  )}
-
-                {logs[section].video_url &&
-                  (!logs[section].video_urls ||
-                    logs[section].video_urls.length === 0) && (
-                    <div className="rounded-xl overflow-hidden border border-zinc-700 bg-black shadow-2xl">
-                      <div className="flex items-center justify-between bg-zinc-900 p-3">
-                        <span className="text-[10px] font-bold text-zinc-300">
-                          Video
-                        </span>
-                        <a
-                          href={logs[section].video_url}
-                          download
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 transition-all active:scale-95"
-                        >
-                          Scarica
-                        </a>
-                      </div>
-                      <video
-                        src={logs[section].video_url}
-                        controls
-                        className="w-full aspect-video object-contain"
-                      />
                     </div>
                   )}
               </div>
@@ -389,17 +796,27 @@ export default function TrainerPage() {
                 <div className="w-1.5 h-2 bg-yellow-500 rounded-full" />
                 Note coach
               </label>
-              <textarea
-                value={form[`coach_notes_${section}` as keyof WorkoutForm]}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    [`coach_notes_${section}`]: event.target.value,
-                  }))
-                }
-                placeholder={`Note per l'atleta su ${section}...`}
-                className="w-full bg-black border border-yellow-700/30 p-3 rounded-lg h-24 text-xs outline-none focus:border-yellow-500 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-600"
-              />
+              {(() => {
+                const coachNoteKey =
+                  `coach_notes_${section}` as
+                    | 'coach_notes_mobility'
+                    | 'coach_notes_strength'
+                    | 'coach_notes_wod'
+
+                return (
+                  <textarea
+                    value={form[coachNoteKey]}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        [coachNoteKey]: event.target.value,
+                      }))
+                    }
+                    placeholder={`Note per l'atleta su ${section}...`}
+                    className="w-full bg-black border border-yellow-700/30 p-3 rounded-lg h-24 text-xs outline-none focus:border-yellow-500 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-600"
+                  />
+                )
+              })()}
             </div>
           </div>
         ))}
