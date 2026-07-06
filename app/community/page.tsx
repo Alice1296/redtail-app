@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { WeekSelector } from '@/app/components/WeekSelector'
 import {
   DAYS,
   formatAthleteName,
@@ -221,25 +222,8 @@ export default function CommunityPage() {
           )}
         </div>
 
-        <div className="flex justify-center gap-10 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl">
-          <button
-            onClick={() => setWeek((value) => Math.max(1, value - 1))}
-            className="text-red-500 text-2xl font-bold"
-          >
-            {'<'}
-          </button>
-          <div className="text-center">
-            <span className="block text-[10px] text-zinc-500 uppercase font-black">
-              Week
-            </span>
-            <span className="text-xl font-black text-red-500 italic">{week}</span>
-          </div>
-          <button
-            onClick={() => setWeek((value) => value + 1)}
-            className="text-red-500 text-2xl font-bold"
-          >
-            {'>'}
-          </button>
+        <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-2xl">
+          <WeekSelector currentWeek={week} onWeekChange={setWeek} maxVisibleWeeks={8} />
         </div>
 
         <div className="flex gap-2 overflow-x-auto">
