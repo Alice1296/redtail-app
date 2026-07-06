@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type WeekInfo = {
@@ -52,6 +52,7 @@ export function WeekSelector({
   const [weeks, setWeeks] = useState<WeekInfo[]>([])
   const [lastModifiedWeek, setLastModifiedWeek] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const activeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     async function loadWeeks() {
@@ -83,6 +84,14 @@ export function WeekSelector({
 
     loadWeeks()
   }, [clientId])
+
+  useEffect(() => {
+    activeButtonRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    })
+  }, [currentWeek])
 
   // Genera dinamicamente le settimane da visualizzare
   // Se currentWeek è nei dati, mostra da max(1, currentWeek - 2) a currentWeek + 10
@@ -133,6 +142,7 @@ export function WeekSelector({
               return (
                 <button
                   key={week}
+                  ref={isCurrentWeek ? activeButtonRef : undefined}
                   onClick={() => onWeekChange(week)}
                   className={`
                     relative min-w-[60px] py-2.5 px-3 rounded-lg font-black text-[10px]

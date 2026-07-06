@@ -149,7 +149,14 @@ function SmartPrText({
   const nodes: ReactNode[] = []
   let lastIndex = 0
   let currentExercise: string | null = null
+  let currentExerciseEnd = 0
   let match: RegExpExecArray | null
+
+  // Una riga di separatori (es. "- - - -") tra due percentuali indica che
+  // si e' passati a un esercizio diverso: in quel caso non riusiamo
+  // l'ultimo esercizio riconosciuto come fallback.
+  const hasSectionBreak = (segment: string) =>
+    /^[ \t]*-(?:[ \t]*-)+[ \t]*$/m.test(segment)
 
   const renderTextWithLineBreaks = (value: string, keyPrefix: string) =>
     value.split('\n').flatMap((segment, segmentIndex, array) =>
@@ -182,13 +189,19 @@ function SmartPrText({
     }
 
     const surroundingText = text.slice(Math.max(0, start - 50), start)
+    const freshExerciseName =
+      findExerciseNameInText(surroundingText) || findExerciseNameInText(rawMatch)
+    const canReuseCurrentExercise =
+      currentExercise && !hasSectionBreak(text.slice(currentExerciseEnd, start))
     const exerciseName: string | null =
-      findExerciseNameInText(surroundingText) ||
-      findExerciseNameInText(rawMatch) ||
-      currentExercise
+      freshExerciseName || (canReuseCurrentExercise ? currentExercise : null)
+
+    if (freshExerciseName) {
+      currentExercise = freshExerciseName
+    }
 
     if (exerciseName) {
-      currentExercise = exerciseName
+      currentExerciseEnd = end
     }
 
     const loads = exerciseName
