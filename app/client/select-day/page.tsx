@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, Suspense } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 const DAYS_IT = {
   monday: 'Lunedì',
@@ -40,9 +41,23 @@ function SelectDayPage() {
     router.push(`/client?week=${week}&day=${selectedDay}`)
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/')
+  }
+
   return (
     <div className="min-h-screen bg-black p-4 font-sans text-white sm:p-6">
       <div className="mx-auto max-w-2xl">
+        <div className="mb-4 flex justify-end">
+          <button
+            onClick={handleLogout}
+            className="bg-red-600/10 border border-red-600 text-red-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-red-600/20 transition-all active:scale-95"
+          >
+            Logout
+          </button>
+        </div>
+
         <div className="mb-10 flex flex-col items-center text-center">
           <Image
             src="/logo.png"
