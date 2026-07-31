@@ -26,6 +26,12 @@ import {
   type WodTimerPhase,
   type WodTimerSegment,
 } from '@/lib/community'
+import {
+  generateWorkoutPdf,
+  parseWorkoutRowForExport,
+  type ExportSectionKey,
+  type WorkoutExportDay,
+} from '@/lib/pdfExport'
 
 type WorkoutRow = {
   wod?: string | null
@@ -595,6 +601,7 @@ function ClientPage() {
   const [loading, setLoading] = useState(true)
   const [scoreLoading, setScoreLoading] = useState(false)
   const [uploadingSection, setUploadingSection] = useState<string | null>(null)
+  const [exportingWeekPdf, setExportingWeekPdf] = useState(false)
 
   // Visual Flash State
   const [isFlashing, setIsFlashing] = useState(false)
@@ -1182,6 +1189,114 @@ function ClientPage() {
     router.replace(`/client?week=${week}&day=${day}`, { scroll: false })
   }
 
+  function buildCurrentDayExport(): WorkoutExportDay {
+    const sections: Partial<Record<ExportSectionKey, string>> = {}
+    const coachNotes: Partial<Record<ExportSectionKey, string>> = {}
+    const feedback: Partial<Record<ExportSectionKey, string>> = {}
+
+    if (workout) {
+      let parsedCoachNotes: Record<string, unknown> = {}
+      try {
+        parsedCoachNotes =
+          typeof workout.coach_notes === 'string'
+            ? JSON.parse(workout.coach_notes || '{}')
+            : {}
+      } catch {
+        parsedCoachNotes = {}
+      }
+
+      ;(['mobility', 'strength', 'wod'] as ExportSectionKey[]).forEach((key) => {
+        const value = workout[key]
+        if (value) sections[key] = String(value)
+
+        const note = parsedCoachNotes?.[key]
+        if (note) coachNotes[key] = String(note)
+
+        const fb = logs[key]?.notes
+        if (fb) feedback[key] = fb
+      })
+    }
+
+    return {
+      week: Number(week),
+      day: activeDay,
+      hasWorkout: !!workout,
+      sections,
+      coachNotes,
+      feedback,
+      scoreType: workout?.wod_score_type || null,
+      scoreLabel: workout?.wod_score_label || null,
+      scoreDisplay: scoreDisplay || null,
+      scoreNote: scoreNote || null,
+    }
+  }
+
+  function handleExportDayPdf() {
+    generateWorkoutPdf([buildCurrentDayExport()], `redtail-settimana${week}-${activeDay}.pdf`)
+  }
+
+  async function handleExportWeekPdf() {
+    if (!user) return
+
+    try {
+      setExportingWeekPdf(true)
+
+      const weekDays: WorkoutExportDay[] = []
+
+      for (const dayInfo of DAYS) {
+        const { data: workoutRow } = await supabase
+          .from('workouts')
+          .select('*')
+          .eq('client_id', user.id)
+          .eq('week_number', Number(week))
+          .eq('day', dayInfo.key)
+          .maybeSingle()
+
+        const { data: dayLogs } = await supabase
+          .from('client_logs')
+          .select('*')
+          .eq('client_id', user.id)
+          .eq('week_number', Number(week))
+          .eq('day', dayInfo.key)
+
+        const { data: dayScore } = await supabase
+          .from('workout_scores')
+          .select('score_type, score_display, note')
+          .eq('client_id', user.id)
+          .eq('week_number', Number(week))
+          .eq('day', dayInfo.key)
+          .maybeSingle()
+
+        const { sections, coachNotes, scoreType, scoreLabel } =
+          parseWorkoutRowForExport(workoutRow)
+
+        const feedback: Partial<Record<ExportSectionKey, string>> = {}
+        dayLogs?.forEach((log) => {
+          if (log.notes) feedback[log.section as ExportSectionKey] = log.notes
+        })
+
+        weekDays.push({
+          week: Number(week),
+          day: dayInfo.key,
+          hasWorkout: !!workoutRow,
+          sections,
+          coachNotes,
+          feedback,
+          scoreType,
+          scoreLabel,
+          scoreDisplay: dayScore?.score_display || null,
+          scoreNote: dayScore?.note || null,
+        })
+      }
+
+      generateWorkoutPdf(weekDays, `redtail-settimana${week}.pdf`)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Errore esportazione PDF settimana')
+    } finally {
+      setExportingWeekPdf(false)
+    }
+  }
+
   async function handleVideoUpload(section: string, file: File) {
     if (!user) {
       return
@@ -1298,6 +1413,23 @@ function ClientPage() {
           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all active:scale-95"
         >
           Torna a selezione settimana
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 p-4 bg-zinc-900 border-b border-zinc-800">
+        <button
+          onClick={handleExportDayPdf}
+          disabled={loading || !workout}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all disabled:opacity-40 disabled:hover:border-zinc-700 disabled:hover:text-zinc-500"
+        >
+          Esporta giorno (PDF)
+        </button>
+        <button
+          onClick={handleExportWeekPdf}
+          disabled={exportingWeekPdf}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all disabled:opacity-40"
+        >
+          {exportingWeekPdf ? 'Generazione...' : 'Esporta settimana (PDF)'}
         </button>
       </div>
 
