@@ -1232,7 +1232,11 @@ function ClientPage() {
   }
 
   function handleExportDayPdf() {
-    generateWorkoutPdf([buildCurrentDayExport()], `redtail-settimana${week}-${activeDay}.pdf`)
+    generateWorkoutPdf(
+      [buildCurrentDayExport()],
+      `redtail-settimana${week}-${activeDay}.pdf`,
+      prValues
+    )
   }
 
   async function handleExportWeekPdf() {
@@ -1289,7 +1293,7 @@ function ClientPage() {
         })
       }
 
-      generateWorkoutPdf(weekDays, `redtail-settimana${week}.pdf`)
+      generateWorkoutPdf(weekDays, `redtail-settimana${week}.pdf`, prValues)
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Errore esportazione PDF settimana')
     } finally {

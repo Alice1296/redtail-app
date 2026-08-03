@@ -1,5 +1,16 @@
 import { jsPDF } from 'jspdf'
-import type { DayKey, ScoreType } from './community'
+import {
+  findExerciseNameInText,
+  normalizeExerciseName,
+  type DayKey,
+  type ScoreType,
+} from './community'
+
+export type PdfPrValue = {
+  value: number
+  unit: string
+  updatedAt?: string | null
+}
 
 export type ExportSectionKey = 'mobility' | 'strength' | 'wod'
 
@@ -94,6 +105,97 @@ export function parseWorkoutRowForExport(
   return { sections, coachNotes, scoreType, scoreLabel }
 }
 
+function calcLoad(
+  exerciseName: string,
+  percentage: number,
+  prValues: Record<string, PdfPrValue>
+): { weight: number; unit: string } | null {
+  const pr = prValues[normalizeExerciseName(exerciseName)]
+
+  if (!pr) {
+    return null
+  }
+
+  return {
+    weight: Math.round(pr.value * (percentage / 100) * 10) / 10,
+    unit: pr.unit || 'kg',
+  }
+}
+
+/**
+ * Riproduce, in testo semplice, il calcolo dei carichi che la pagina client
+ * mostra accanto alle percentuali (es. "80%" -> "80% (100kg)"), basandosi sui
+ * massimali dell'atleta. Mantiene invariato il resto del testo.
+ */
+function annotateLoads(
+  text: string,
+  prValues: Record<string, PdfPrValue>
+): string {
+  if (!text) {
+    return text
+  }
+
+  const percentagePattern =
+    /((?:\d+\s*(?:r|x)?\s*@\s*)?(\d{1,3}(?:[.,]\d+)?(?:\s*[-–]\s*\d{1,3}(?:[.,]\d+)?)*?)\s*%)/gi
+  const hasSectionBreak = (segment: string) =>
+    /^[ \t]*-(?:[ \t]*-)+[ \t]*$/m.test(segment)
+  const parsePercentageSequence = (rawValue: string) =>
+    rawValue
+      .split(/[-–]/g)
+      .map((part) => Number(part.replace(',', '.').trim()))
+      .filter((value) => !Number.isNaN(value))
+
+  let result = ''
+  let lastIndex = 0
+  let currentExercise: string | null = null
+  let currentExerciseEnd = 0
+  let match: RegExpExecArray | null
+
+  percentagePattern.lastIndex = 0
+
+  while ((match = percentagePattern.exec(text)) !== null) {
+    const [rawMatch, , rawPercentageSequence] = match
+    const start = match.index
+    const end = start + rawMatch.length
+    const percentages = parsePercentageSequence(rawPercentageSequence)
+
+    result += text.slice(lastIndex, start)
+
+    const surroundingText = text.slice(Math.max(0, start - 50), start)
+    const freshExerciseName =
+      findExerciseNameInText(surroundingText) || findExerciseNameInText(rawMatch)
+    const canReuseCurrentExercise =
+      currentExercise && !hasSectionBreak(text.slice(currentExerciseEnd, start))
+    const exerciseName: string | null =
+      freshExerciseName || (canReuseCurrentExercise ? currentExercise : null)
+
+    if (freshExerciseName) {
+      currentExercise = freshExerciseName
+    }
+
+    if (exerciseName) {
+      currentExerciseEnd = end
+    }
+
+    const loads = exerciseName
+      ? percentages
+          .map((percentage) => calcLoad(exerciseName, percentage, prValues))
+          .filter((load): load is { weight: number; unit: string } => Boolean(load))
+      : []
+
+    const loadDisplay = loads.length
+      ? loads.map((load) => `${load.weight}${load.unit}`).join(', ')
+      : null
+
+    result += loadDisplay ? `${rawMatch} (${loadDisplay})` : rawMatch
+    lastIndex = end
+  }
+
+  result += text.slice(lastIndex)
+
+  return result
+}
+
 function addWrappedText(
   doc: jsPDF,
   text: string,
@@ -119,7 +221,11 @@ function addWrappedText(
   return cursorY
 }
 
-export function generateWorkoutPdf(days: WorkoutExportDay[], fileName: string) {
+export function generateWorkoutPdf(
+  days: WorkoutExportDay[],
+  fileName: string,
+  prValues: Record<string, PdfPrValue> = {}
+) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const pageHeight = doc.internal.pageSize.getHeight()
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -181,7 +287,16 @@ export function generateWorkoutPdf(days: WorkoutExportDay[], fileName: string) {
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(10.5)
         doc.setTextColor(20, 20, 20)
-        y = addWrappedText(doc, content, marginX, y, maxWidth, 5, pageHeight, bottomMargin)
+        y = addWrappedText(
+          doc,
+          annotateLoads(content, prValues),
+          marginX,
+          y,
+          maxWidth,
+          5,
+          pageHeight,
+          bottomMargin
+        )
         y += 3
       }
 
@@ -192,7 +307,7 @@ export function generateWorkoutPdf(days: WorkoutExportDay[], fileName: string) {
         doc.setTextColor(150, 110, 0)
         y = addWrappedText(
           doc,
-          `Nota del coach: ${coachNote}`,
+          `Nota del coach: ${annotateLoads(coachNote, prValues)}`,
           marginX,
           y,
           maxWidth,
