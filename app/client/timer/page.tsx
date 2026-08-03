@@ -17,6 +17,8 @@ import {
 const PREP_SECONDS = 10
 const FINAL_BEEP_SECONDS = 5
 const TIMER_WOD_STORAGE_KEY = 'redtail-timer-wod'
+const RING_RADIUS = 45
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
 type Status = 'idle' | 'prep' | 'running' | 'paused' | 'done'
 
@@ -87,6 +89,7 @@ function TimerPage() {
   const [status, setStatus] = useState<Status>('idle')
   const [prepRemaining, setPrepRemaining] = useState(PREP_SECONDS)
   const [elapsed, setElapsed] = useState(0)
+  const [ringFraction, setRingFraction] = useState(0)
   const [volume, setVolume] = useState(0.8)
   const [muted, setMuted] = useState(false)
 
@@ -312,9 +315,22 @@ function TimerPage() {
     runStartRef.current = null
     setStatus('done')
     setElapsed(totalSeconds)
+    setRingFraction(1)
     playBeep(1180, 0.5)
     speak('Time')
     void releaseWakeLock()
+  }
+
+  // Frazione di riempimento della ghiera: quota del blocco corrente gia'
+  // trascorsa (0 = inizio blocco, 1 = fine blocco).
+  function computeSegmentFraction(preciseElapsed: number): number {
+    if (totalSeconds <= 0) return 0
+    const tl = getTimerTimelineState(config, preciseElapsed)
+    if (tl.isComplete) return 1
+    const duration = tl.currentSegment?.durationSeconds || 0
+    if (duration <= 0) return 0
+    const elapsedInSegment = tl.elapsedSegmentSeconds || 0
+    return Math.min(1, Math.max(0, elapsedInSegment / duration))
   }
 
   // ---- Controlli ---------------------------------------------------------
@@ -322,6 +338,7 @@ function TimerPage() {
     setStatus('running')
     runStartRef.current = Date.now() - fromElapsed * 1000
     prevSecondRef.current = fromElapsed
+    setRingFraction(computeSegmentFraction(fromElapsed))
 
     if (fromElapsed === 0) {
       lastSegmentIdRef.current = segments[0]?.id || null
@@ -332,7 +349,10 @@ function TimerPage() {
     clearTick()
     tickRef.current = setInterval(() => {
       if (runStartRef.current === null) return
-      const current = Math.floor((Date.now() - runStartRef.current) / 1000)
+      const preciseElapsed = (Date.now() - runStartRef.current) / 1000
+      setRingFraction(computeSegmentFraction(preciseElapsed))
+
+      const current = Math.floor(preciseElapsed)
       if (current <= prevSecondRef.current) return
 
       for (let second = prevSecondRef.current + 1; second <= current; second += 1) {
@@ -353,15 +373,18 @@ function TimerPage() {
     setElapsed(0)
     setStatus('prep')
     setPrepRemaining(PREP_SECONDS)
+    setRingFraction(0)
     prevPrepSecondRef.current = PREP_SECONDS
     speak('Get ready')
 
     const prepStart = Date.now()
     clearTick()
     tickRef.current = setInterval(() => {
-      const passed = Math.floor((Date.now() - prepStart) / 1000)
+      const passedFloat = (Date.now() - prepStart) / 1000
+      const passed = Math.floor(passedFloat)
       const remaining = Math.max(0, PREP_SECONDS - passed)
       setPrepRemaining(remaining)
+      setRingFraction(Math.min(1, passedFloat / PREP_SECONDS))
 
       // I beep scattano una sola volta per secondo (l'intervallo gira a 200ms).
       if (remaining !== prevPrepSecondRef.current) {
@@ -401,6 +424,7 @@ function TimerPage() {
     setStatus('idle')
     setElapsed(0)
     setPrepRemaining(PREP_SECONDS)
+    setRingFraction(0)
     void releaseWakeLock()
   }
 
@@ -464,9 +488,15 @@ function TimerPage() {
   })()
   const showRounds =
     totalRounds > 1 && (status === 'running' || status === 'paused')
-  const roundLabel = showRounds
-    ? `Round ${Math.max(1, currentRound)} / ${totalRounds}`
-    : null
+
+  // La chiave rimonta il cerchio a ogni cambio blocco: la ghiera riparte da
+  // vuota senza "srotolarsi" all'indietro.
+  const ringKey =
+    status === 'prep'
+      ? 'prep'
+      : status === 'running' || status === 'paused'
+        ? `seg-${timeline.currentSegmentIndex}`
+        : 'static'
 
   const isConfigured = status === 'idle' || status === 'done'
 
@@ -516,27 +546,54 @@ function TimerPage() {
         <div
           className={`rounded-3xl border border-white/10 p-8 text-center shadow-2xl transition-colors duration-300 ${backgroundClass}`}
         >
-          <p className="text-[11px] font-black uppercase tracking-[0.3em] text-white/80">
-            {phaseLabel}
-          </p>
-          <div className="mt-2 text-7xl font-black italic tracking-tighter tabular-nums text-white">
-            {mainDisplay}
+          <div className="relative mx-auto flex h-64 w-64 items-center justify-center">
+            <svg
+              viewBox="0 0 100 100"
+              className="absolute inset-0 h-full w-full -rotate-90"
+            >
+              <circle
+                cx="50"
+                cy="50"
+                r={RING_RADIUS}
+                fill="none"
+                stroke="rgba(0,0,0,0.28)"
+                strokeWidth="6"
+              />
+              <circle
+                key={ringKey}
+                cx="50"
+                cy="50"
+                r={RING_RADIUS}
+                fill="none"
+                stroke="rgba(255,255,255,0.95)"
+                strokeWidth="6"
+                strokeLinecap="round"
+                strokeDasharray={RING_CIRCUMFERENCE}
+                strokeDashoffset={RING_CIRCUMFERENCE * (1 - Math.min(1, Math.max(0, ringFraction)))}
+                style={{ transition: 'stroke-dashoffset 0.2s linear' }}
+              />
+            </svg>
+
+            <div className="relative flex flex-col items-center justify-center px-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/80">
+                {phaseLabel}
+              </p>
+              <div className="mt-1 text-6xl font-black italic tracking-tighter tabular-nums text-white">
+                {mainDisplay}
+              </div>
+              {showRounds && (
+                <p className="mt-1 text-base font-black italic uppercase tracking-tight text-white">
+                  Round {Math.max(1, currentRound)}
+                  <span className="text-white/70"> / {totalRounds}</span>
+                </p>
+              )}
+            </div>
           </div>
-          {showRounds && (
-            <p className="mt-2 text-2xl font-black italic uppercase tracking-tight text-white">
-              Round {Math.max(1, currentRound)}
-              <span className="text-white/70"> / {totalRounds}</span>
-            </p>
-          )}
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
             <span className="rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white">
               {activeMode}
             </span>
-            {roundLabel && (
-              <span className="rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white">
-                {roundLabel}
-              </span>
-            )}
             <span className="rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white">
               Totale {formatTimerDuration(totalSeconds)}
             </span>
