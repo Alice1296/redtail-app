@@ -451,10 +451,22 @@ function TimerPage() {
     return 'bg-zinc-900'
   })()
 
-  const roundLabel =
-    segments.length > 1 && (status === 'running' || status === 'paused')
-      ? `Blocco ${timeline.currentSegmentIndex + 1} / ${segments.length}`
-      : null
+  // Un "round" = una fase di lavoro (per Tabata conta la coppia lavoro+recupero
+  // come un solo round, per EMOM ogni blocco e' un round).
+  const totalRounds = segments.filter((segment) => segment.phase === 'work').length
+  const currentRound = (() => {
+    if (timeline.currentSegmentIndex < 0) return 0
+    let count = 0
+    for (let i = 0; i <= timeline.currentSegmentIndex && i < segments.length; i += 1) {
+      if (segments[i].phase === 'work') count += 1
+    }
+    return count
+  })()
+  const showRounds =
+    totalRounds > 1 && (status === 'running' || status === 'paused')
+  const roundLabel = showRounds
+    ? `Round ${Math.max(1, currentRound)} / ${totalRounds}`
+    : null
 
   const isConfigured = status === 'idle' || status === 'done'
 
@@ -510,6 +522,12 @@ function TimerPage() {
           <div className="mt-2 text-7xl font-black italic tracking-tighter tabular-nums text-white">
             {mainDisplay}
           </div>
+          {showRounds && (
+            <p className="mt-2 text-2xl font-black italic uppercase tracking-tight text-white">
+              Round {Math.max(1, currentRound)}
+              <span className="text-white/70"> / {totalRounds}</span>
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <span className="rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white">
               {activeMode}
