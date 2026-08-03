@@ -29,6 +29,7 @@ export default function TrainerClientsPage() {
   const [sendingWeek, setSendingWeek] = useState(false)
   const [deletingClientId, setDeletingClientId] = useState<string | null>(null)
   const [sendFeedback, setSendFeedback] = useState<string | null>(null)
+  const [compactingAll, setCompactingAll] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
@@ -171,6 +172,57 @@ export default function TrainerClientsPage() {
     }
   }
 
+  async function handleCompactAll() {
+    const confirmed = confirm(
+      'Compattare le settimane di TUTTI gli atleti eliminando i buchi? Le settimane con contenuti verranno rinumerate in ordine (1, 2, 3...) e le settimane vuote rimosse. Sposta anche feedback, punteggi e notifiche gia esistenti.'
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setCompactingAll(true)
+      setSendFeedback(null)
+      setError(null)
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const response = await fetch('/api/trainer/compact-all', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
+        body: JSON.stringify({}),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Compressione non riuscita')
+      }
+
+      if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+        console.warn('Avvisi compattazione globale:', result.warnings)
+      }
+
+      setSendFeedback(
+        `Compattazione completata: ${result.clientsCompacted}/${result.clientsProcessed} atleti sistemati, ${result.totalGhostsRemoved} settimane vuote rimosse.`
+      )
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Errore durante la compattazione'
+      )
+    } finally {
+      setCompactingAll(false)
+    }
+  }
+
   async function handleSendWeekReady() {
     try {
       setSendingWeek(true)
@@ -254,6 +306,16 @@ export default function TrainerClientsPage() {
             className="w-full bg-red-600/10 border border-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm text-red-400 hover:bg-red-600/20 transition-all"
           >
             + Nuova scheda (multi-cliente)
+          </button>
+
+          <button
+            onClick={handleCompactAll}
+            disabled={compactingAll || clients.length === 0}
+            className="w-full bg-yellow-900/20 border border-yellow-700/50 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm text-yellow-500 hover:border-yellow-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {compactingAll
+              ? 'Compattazione in corso...'
+              : 'Compatta settimane (tutti gli atleti)'}
           </button>
 
           <button

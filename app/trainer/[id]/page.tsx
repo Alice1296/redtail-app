@@ -310,6 +310,46 @@ function TrainerPage({ id }: { id: string }) {
         setSaved(false)
         setSaveMessage('')
       }, 3000)
+
+      // Se il trainer ha svuotato questo giorno, la settimana potrebbe essere
+      // rimasta senza contenuti (su nessun giorno): in tal caso compattiamo per
+      // richiudere automaticamente il buco. La compattazione lato server
+      // controlla l'intera settimana, quindi non tocca nulla se altri giorni
+      // hanno ancora contenuti.
+      const dayIsEmpty =
+        !form.mobility.trim() && !form.strength.trim() && !form.wod.trim()
+
+      if (dayIsEmpty) {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+
+          const compactResponse = await fetch('/api/trainer/compact-weeks', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : {}),
+            },
+            body: JSON.stringify({ clientId: id }),
+          })
+
+          const compactPayload = await compactResponse.json()
+
+          if (
+            compactResponse.ok &&
+            (compactPayload.movesApplied > 0 || compactPayload.ghostsRemoved > 0)
+          ) {
+            setLoading(false)
+            router.push(`/trainer/${id}/select-week`)
+            return true
+          }
+        } catch (compactError) {
+          console.error('Errore compattazione automatica:', compactError)
+        }
+      }
     }
 
     setLoading(false)

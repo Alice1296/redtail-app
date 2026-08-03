@@ -53,27 +53,29 @@ function createAuthedClients(req: NextRequest) {
   return { authClient, adminClient: adminClient ?? authClient }
 }
 
+function hasContent(row: WorkoutRow): boolean {
+  return Boolean(
+    (row.mobility && row.mobility.trim()) ||
+      (row.strength && row.strength.trim()) ||
+      (row.wod && row.wod.trim())
+  )
+}
+
 /**
- * Trova la prima settimana (>=1) completamente vuota per quel giorno: nessuna
- * riga esistente, oppure una riga con tutte le sezioni vuote (mai compilata).
- * Le settimane anche solo parzialmente compilate vengono saltate.
+ * La scheda va sempre "in coda": nella settimana subito successiva all'ultima
+ * che ha davvero dei contenuti per quel giorno. Cosi non finisce mai dentro un
+ * buco precedente / dietro alla progressione attuale dell'atleta.
  */
-function findFirstEmptyWeek(rowsByWeek: Map<number, WorkoutRow>): number {
-  const maxWeek = rowsByWeek.size > 0 ? Math.max(...rowsByWeek.keys()) : 0
+function findAppendWeek(rowsByWeek: Map<number, WorkoutRow>): number {
+  let lastFilledWeek = 0
 
-  for (let week = 1; week <= maxWeek + 1; week += 1) {
-    const row = rowsByWeek.get(week)
-
-    if (!row) {
-      return week
-    }
-
-    if (!row.mobility && !row.strength && !row.wod) {
-      return week
+  for (const row of rowsByWeek.values()) {
+    if (hasContent(row) && row.week_number > lastFilledWeek) {
+      lastFilledWeek = row.week_number
     }
   }
 
-  return maxWeek + 1
+  return lastFilledWeek + 1
 }
 
 export async function POST(req: NextRequest) {
@@ -189,9 +191,9 @@ export async function POST(req: NextRequest) {
           ])
         )
 
-        // Tutte le sezioni compilate vanno nella stessa settimana: la prima
-        // completamente libera per quel giorno.
-        const targetWeek = findFirstEmptyWeek(rowsByWeek)
+        // Tutte le sezioni compilate vanno nella stessa settimana: quella in
+        // coda, subito dopo l'ultima piena per quel giorno.
+        const targetWeek = findAppendWeek(rowsByWeek)
 
         const rowContent: Pick<WorkoutRow, 'mobility' | 'strength' | 'wod'> = {
           mobility: null,

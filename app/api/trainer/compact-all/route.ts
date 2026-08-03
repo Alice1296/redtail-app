@@ -64,20 +64,47 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const body = await req.json()
-    const clientId = String(body?.clientId || '')
+    const { data: profileRows, error: profileError } = await adminClient
+      .from('profiles')
+      .select('id, role')
 
-    if (!clientId) {
-      return NextResponse.json({ error: 'clientId richiesto' }, { status: 400 })
+    if (profileError) {
+      throw profileError
     }
 
-    const result = await compactClientWeeks(adminClient, clientId)
+    const clientIds = (profileRows || [])
+      .filter((profile) => profile.id !== user.id && profile.role !== 'trainer')
+      .map((profile) => profile.id as string)
+
+    let clientsCompacted = 0
+    let totalMoves = 0
+    let totalGhostsRemoved = 0
+    const warnings: string[] = []
+
+    for (const clientId of clientIds) {
+      try {
+        const result = await compactClientWeeks(adminClient, clientId)
+
+        if (result.movesApplied > 0 || result.ghostsRemoved > 0) {
+          clientsCompacted += 1
+        }
+
+        totalMoves += result.movesApplied
+        totalGhostsRemoved += result.ghostsRemoved
+        result.warnings.forEach((warning) => warnings.push(`${clientId}: ${warning}`))
+      } catch (err: unknown) {
+        warnings.push(
+          `${clientId}: ${err instanceof Error ? err.message : 'errore compressione'}`
+        )
+      }
+    }
 
     return NextResponse.json({
-      movesApplied: result.movesApplied,
-      ghostsRemoved: result.ghostsRemoved,
-      mapping: result.mapping,
-      warnings: result.warnings,
+      clientsProcessed: clientIds.length,
+      clientsCompacted,
+      totalMoves,
+      totalGhostsRemoved,
+      warnings,
     })
   } catch (err: unknown) {
     return NextResponse.json(
