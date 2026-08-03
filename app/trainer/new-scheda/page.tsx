@@ -244,9 +244,9 @@ export default function NewSchedaPage() {
             priority
           />
           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-            Compila le sezioni che vuoi e assegnale a piu atleti: ogni sezione
-            verra inserita nella prima settimana libera di ciascuno. Le sezioni
-            lasciate vuote vengono ignorate.
+            Compila le sezioni che vuoi e assegnale a piu atleti: tutte insieme
+            occuperanno la prima settimana completamente libera di ciascuno. Le
+            sezioni lasciate vuote vengono ignorate.
           </p>
         </div>
 

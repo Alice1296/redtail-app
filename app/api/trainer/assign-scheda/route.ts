@@ -54,13 +54,11 @@ function createAuthedClients(req: NextRequest) {
 }
 
 /**
- * Trova la prima settimana (>=1) in cui la sezione richiesta e' ancora vuota
- * per quel giorno, riusando righe gia' parzialmente compilate da altre sezioni.
+ * Trova la prima settimana (>=1) completamente vuota per quel giorno: nessuna
+ * riga esistente, oppure una riga con tutte le sezioni vuote (mai compilata).
+ * Le settimane anche solo parzialmente compilate vengono saltate.
  */
-function findFirstFreeWeek(
-  rowsByWeek: Map<number, WorkoutRow>,
-  section: SectionKey
-): number {
+function findFirstEmptyWeek(rowsByWeek: Map<number, WorkoutRow>): number {
   const maxWeek = rowsByWeek.size > 0 ? Math.max(...rowsByWeek.keys()) : 0
 
   for (let week = 1; week <= maxWeek + 1; week += 1) {
@@ -70,7 +68,7 @@ function findFirstFreeWeek(
       return week
     }
 
-    if (!row[section]) {
+    if (!row.mobility && !row.strength && !row.wod) {
       return week
     }
   }
@@ -184,9 +182,6 @@ export async function POST(req: NextRequest) {
           throw fetchError
         }
 
-        // Mappa in-memory dello stato del giorno: la aggiorniamo mano a mano che
-        // assegniamo le sezioni, cosi la sezione successiva "vede" quelle gia'
-        // piazzate e puo' riusare la stessa settimana quando e' libera.
         const rowsByWeek = new Map<number, WorkoutRow>(
           ((existingRows || []) as WorkoutRow[]).map((row) => [
             row.week_number,
@@ -194,69 +189,45 @@ export async function POST(req: NextRequest) {
           ])
         )
 
-        const touchedWeeks = new Set<number>()
+        // Tutte le sezioni compilate vanno nella stessa settimana: la prima
+        // completamente libera per quel giorno.
+        const targetWeek = findFirstEmptyWeek(rowsByWeek)
+
+        const rowContent: Pick<WorkoutRow, 'mobility' | 'strength' | 'wod'> = {
+          mobility: null,
+          strength: null,
+          wod: null,
+        }
+        const parsedNotes: Record<string, unknown> = {}
         const assignments: Array<{ section: SectionKey; week: number }> = []
 
         for (const sectionInput of sections) {
-          const targetWeek = findFirstFreeWeek(rowsByWeek, sectionInput.section)
-
-          let row = rowsByWeek.get(targetWeek)
-          if (!row) {
-            row = {
-              week_number: targetWeek,
-              mobility: null,
-              strength: null,
-              wod: null,
-              coach_notes: '{}',
-            }
-            rowsByWeek.set(targetWeek, row)
-          }
-
-          row[sectionInput.section] = sectionInput.content
-
-          let parsedNotes: Record<string, unknown> = {}
-          try {
-            parsedNotes =
-              typeof row.coach_notes === 'string'
-                ? JSON.parse(row.coach_notes || '{}')
-                : {}
-          } catch {
-            parsedNotes = {}
-          }
-
+          rowContent[sectionInput.section] = sectionInput.content
           parsedNotes[sectionInput.section] = sectionInput.coachNote
 
           if (sectionInput.section === 'wod') {
-            parsedNotes.wod_score_type = scoreType || parsedNotes.wod_score_type || null
-            parsedNotes.wod_score_label =
-              scoreLabel || parsedNotes.wod_score_label || null
+            parsedNotes.wod_score_type = scoreType || null
+            parsedNotes.wod_score_label = scoreLabel || null
           }
 
-          row.coach_notes = JSON.stringify(parsedNotes)
-
-          touchedWeeks.add(targetWeek)
           assignments.push({ section: sectionInput.section, week: targetWeek })
         }
 
-        for (const week of touchedWeeks) {
-          const row = rowsByWeek.get(week)!
+        const { error: upsertError } = await adminClient.from('workouts').upsert(
+          {
+            client_id: clientId,
+            week_number: targetWeek,
+            day,
+            mobility: rowContent.mobility,
+            strength: rowContent.strength,
+            wod: rowContent.wod,
+            coach_notes: JSON.stringify(parsedNotes),
+          },
+          { onConflict: 'client_id,week_number,day' }
+        )
 
-          const { error: upsertError } = await adminClient.from('workouts').upsert(
-            {
-              client_id: clientId,
-              week_number: week,
-              day,
-              mobility: row.mobility,
-              strength: row.strength,
-              wod: row.wod,
-              coach_notes: row.coach_notes,
-            },
-            { onConflict: 'client_id,week_number,day' }
-          )
-
-          if (upsertError) {
-            throw upsertError
-          }
+        if (upsertError) {
+          throw upsertError
         }
 
         results.push({ clientId, clientName, assignments })
