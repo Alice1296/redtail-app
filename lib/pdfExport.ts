@@ -221,6 +221,19 @@ function addWrappedText(
   return cursorY
 }
 
+type FontStyle = 'normal' | 'bold' | 'italic'
+
+type TextPiece = {
+  text: string
+  fontSize: number
+  style: FontStyle
+  lineHeight: number
+  color: [number, number, number]
+  gapAfter: number
+}
+
+const TOP_MARGIN = 20
+
 export function generateWorkoutPdf(
   days: WorkoutExportDay[],
   fileName: string,
@@ -232,24 +245,37 @@ export function generateWorkoutPdf(
   const marginX = 15
   const maxWidth = pageWidth - marginX * 2
   const bottomMargin = 20
+  const usableHeight = pageHeight - TOP_MARGIN - bottomMargin
+
+  const countLines = (piece: TextPiece): number => {
+    doc.setFont('helvetica', piece.style)
+    doc.setFontSize(piece.fontSize)
+    return (doc.splitTextToSize(piece.text, maxWidth) as string[]).length
+  }
+
+  const measureBlock = (pieces: TextPiece[]): number =>
+    pieces.reduce(
+      (total, piece) => total + countLines(piece) * piece.lineHeight + piece.gapAfter,
+      0
+    )
 
   days.forEach((dayData, index) => {
     if (index > 0) {
       doc.addPage()
     }
 
-    let y = 20
+    let y = TOP_MARGIN
 
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(18)
+    doc.setFontSize(22)
     doc.setTextColor(220, 38, 38)
     doc.text('REDTAIL', marginX, y)
-    y += 9
+    y += 10
 
-    doc.setFontSize(13)
+    doc.setFontSize(16)
     doc.setTextColor(20, 20, 20)
     doc.text(`Settimana ${dayData.week} - ${DAY_LABELS_IT[dayData.day]}`, marginX, y)
-    y += 6
+    y += 7
 
     doc.setDrawColor(220, 38, 38)
     doc.setLineWidth(0.5)
@@ -258,7 +284,7 @@ export function generateWorkoutPdf(
 
     if (!dayData.hasWorkout) {
       doc.setFont('helvetica', 'italic')
-      doc.setFontSize(12)
+      doc.setFontSize(14)
       doc.setTextColor(120, 120, 120)
       doc.text('Rest day', marginX, y)
       return
@@ -272,93 +298,102 @@ export function generateWorkoutPdf(
         continue
       }
 
-      if (y > pageHeight - bottomMargin - 10) {
-        doc.addPage()
-        y = 20
-      }
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(12)
-      doc.setTextColor(220, 38, 38)
-      doc.text(SECTION_LABELS[key].toUpperCase(), marginX, y)
-      y += 7
+      const pieces: TextPiece[] = [
+        {
+          text: SECTION_LABELS[key].toUpperCase(),
+          fontSize: 15,
+          style: 'bold',
+          lineHeight: 8,
+          color: [220, 38, 38],
+          gapAfter: 0,
+        },
+      ]
 
       if (content) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(10.5)
-        doc.setTextColor(20, 20, 20)
-        y = addWrappedText(
-          doc,
-          annotateLoads(content, prValues),
-          marginX,
-          y,
-          maxWidth,
-          5,
-          pageHeight,
-          bottomMargin
-        )
-        y += 3
+        pieces.push({
+          text: annotateLoads(content, prValues),
+          fontSize: 13,
+          style: 'normal',
+          lineHeight: 6,
+          color: [20, 20, 20],
+          gapAfter: 3,
+        })
       }
 
       const coachNote = dayData.coachNotes[key]
       if (coachNote) {
-        doc.setFont('helvetica', 'italic')
-        doc.setFontSize(9.5)
-        doc.setTextColor(150, 110, 0)
-        y = addWrappedText(
-          doc,
-          `Nota del coach: ${annotateLoads(coachNote, prValues)}`,
-          marginX,
-          y,
-          maxWidth,
-          5,
-          pageHeight,
-          bottomMargin
-        )
-        y += 3
+        pieces.push({
+          text: `Nota del coach: ${annotateLoads(coachNote, prValues)}`,
+          fontSize: 12,
+          style: 'italic',
+          lineHeight: 5.5,
+          color: [150, 110, 0],
+          gapAfter: 3,
+        })
       }
 
       if (key === 'wod' && dayData.scoreType) {
-        doc.setFont('helvetica', 'bold')
-        doc.setFontSize(9.5)
-        doc.setTextColor(20, 20, 20)
-        const scoreLine = `Score (${dayData.scoreLabel || dayData.scoreType}): ${
-          dayData.scoreDisplay || '-'
-        }`
-        y = addWrappedText(doc, scoreLine, marginX, y, maxWidth, 5, pageHeight, bottomMargin)
+        pieces.push({
+          text: `Score (${dayData.scoreLabel || dayData.scoreType}): ${
+            dayData.scoreDisplay || '-'
+          }`,
+          fontSize: 12,
+          style: 'bold',
+          lineHeight: 5.5,
+          color: [20, 20, 20],
+          gapAfter: dayData.scoreNote ? 0 : 3,
+        })
 
         if (dayData.scoreNote) {
-          doc.setFont('helvetica', 'normal')
-          y = addWrappedText(
-            doc,
-            `Note score: ${dayData.scoreNote}`,
-            marginX,
-            y,
-            maxWidth,
-            5,
-            pageHeight,
-            bottomMargin
-          )
+          pieces.push({
+            text: `Note score: ${dayData.scoreNote}`,
+            fontSize: 12,
+            style: 'normal',
+            lineHeight: 5.5,
+            color: [20, 20, 20],
+            gapAfter: 3,
+          })
         }
-        y += 3
       }
 
       const feedback = dayData.feedback[key]
       if (feedback) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(9.5)
-        doc.setTextColor(0, 120, 60)
+        pieces.push({
+          text: `Il tuo feedback: ${feedback}`,
+          fontSize: 12,
+          style: 'normal',
+          lineHeight: 5.5,
+          color: [0, 120, 60],
+          gapAfter: 3,
+        })
+      }
+
+      // Mantieni la sezione tutta sulla stessa pagina: se il blocco non entra
+      // nello spazio rimasto ma starebbe in una pagina intera, spostalo tutto
+      // alla pagina successiva. Se e' piu' lungo di una pagina intera (raro),
+      // lascia che scorra normalmente su piu' pagine.
+      const blockHeight = measureBlock(pieces) + 4
+
+      if (y + blockHeight > pageHeight - bottomMargin && blockHeight <= usableHeight) {
+        doc.addPage()
+        y = TOP_MARGIN
+      }
+
+      for (const piece of pieces) {
+        doc.setFont('helvetica', piece.style)
+        doc.setFontSize(piece.fontSize)
+        doc.setTextColor(piece.color[0], piece.color[1], piece.color[2])
         y = addWrappedText(
           doc,
-          `Il tuo feedback: ${feedback}`,
+          piece.text,
           marginX,
           y,
           maxWidth,
-          5,
+          piece.lineHeight,
           pageHeight,
           bottomMargin
         )
-        y += 3
+        y += piece.gapAfter
       }
 
       y += 4
