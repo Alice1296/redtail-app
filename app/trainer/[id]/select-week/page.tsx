@@ -13,6 +13,8 @@ export default function TrainerSelectWeekPage() {
   const [selectedWeek, setSelectedWeek] = useState(1)
   const [clientName, setClientName] = useState('')
   const [loading, setLoading] = useState(true)
+  const [compacting, setCompacting] = useState(false)
+  const [compactMessage, setCompactMessage] = useState<string | null>(null)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -68,6 +70,71 @@ export default function TrainerSelectWeekPage() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/')
+  }
+
+  async function handleCompactWeeks() {
+    if (!id) {
+      return
+    }
+
+    const confirmed = confirm(
+      `Comprimere le settimane di ${clientName || 'questo atleta'} per eliminare i buchi? I numeri delle settimane verranno rinumerati in ordine, spostando anche feedback, punteggi e notifiche gia' esistenti.`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setCompacting(true)
+      setCompactMessage(null)
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const response = await fetch('/api/trainer/compact-weeks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
+        body: JSON.stringify({ clientId: id }),
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Errore compressione settimane')
+      }
+
+      const warningsSuffix =
+        Array.isArray(payload.warnings) && payload.warnings.length > 0
+          ? ` (${payload.warnings.length} avvisi, vedi console)`
+          : ''
+
+      if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
+        console.warn('Avvisi compressione settimane:', payload.warnings)
+      }
+
+      setCompactMessage(
+        payload.movesApplied > 0
+          ? `Fatto: ${payload.movesApplied} settimane rinumerate.${warningsSuffix}`
+          : 'Nessun buco da correggere: le settimane sono gia compatte.'
+      )
+
+      if (payload.movesApplied > 0) {
+        window.location.reload()
+      }
+    } catch (err: unknown) {
+      setCompactMessage(
+        err instanceof Error ? err.message : 'Errore compressione settimane'
+      )
+    } finally {
+      setCompacting(false)
+    }
   }
 
   if (loading) {
@@ -133,6 +200,20 @@ export default function TrainerSelectWeekPage() {
               Continua
             </button>
           </div>
+
+          <button
+            onClick={handleCompactWeeks}
+            disabled={compacting}
+            className="w-full rounded-xl border border-yellow-700/50 bg-yellow-900/20 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-yellow-500 transition-all hover:border-yellow-500 disabled:opacity-50"
+          >
+            {compacting ? 'Compressione...' : 'Comprimi settimane (elimina buchi)'}
+          </button>
+
+          {compactMessage && (
+            <p className="text-center text-[11px] font-bold text-zinc-300">
+              {compactMessage}
+            </p>
+          )}
         </div>
       </div>
     </div>

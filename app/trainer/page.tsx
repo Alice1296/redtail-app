@@ -250,6 +250,13 @@ export default function TrainerClientsPage() {
 
         <div className="mb-6 space-y-3">
           <button
+            onClick={() => router.push('/trainer/new-scheda')}
+            className="w-full bg-red-600/10 border border-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm text-red-400 hover:bg-red-600/20 transition-all"
+          >
+            + Nuova scheda (multi-cliente)
+          </button>
+
+          <button
             onClick={() => router.push('/community')}
             className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-2xl font-black uppercase italic tracking-widest text-sm hover:border-red-600 hover:text-red-400 transition-all"
           >
