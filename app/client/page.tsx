@@ -1189,6 +1189,17 @@ function ClientPage() {
     router.replace(`/client?week=${week}&day=${day}`, { scroll: false })
   }
 
+  function openTimer(withWod: boolean) {
+    try {
+      if (withWod && workout?.wod) {
+        sessionStorage.setItem('redtail-timer-wod', String(workout.wod))
+      } else {
+        sessionStorage.removeItem('redtail-timer-wod')
+      }
+    } catch {}
+    router.push('/client/timer')
+  }
+
   function buildCurrentDayExport(): WorkoutExportDay {
     const sections: Partial<Record<ExportSectionKey, string>> = {}
     const coachNotes: Partial<Record<ExportSectionKey, string>> = {}
@@ -1409,6 +1420,12 @@ function ClientPage() {
         >
           Massimali
         </button>
+        <button
+          onClick={() => openTimer(false)}
+          className="col-span-2 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all"
+        >
+          Timer WOD
+        </button>
       </div>
 
       <div className="p-4 bg-zinc-900 border-b border-zinc-800">
@@ -1501,6 +1518,15 @@ function ClientPage() {
                           prValues={prValues}
                         />
                       </div>
+                    )}
+
+                    {isWod && hasContent && (
+                      <button
+                        onClick={() => openTimer(true)}
+                        className="w-full rounded-xl border border-red-600/40 bg-red-600/10 p-3 text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-600/20 transition-all active:scale-95"
+                      >
+                        Apri nel timer (riconoscimento automatico)
+                      </button>
                     )}
 
                       {false && section === 'wod' && wodConfig && (

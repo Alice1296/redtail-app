@@ -975,3 +975,108 @@ export function workoutTextToWodConfig(workoutText: string): WodConfig {
     segments,
   }
 }
+
+// ============================================================================
+// GUIDED TIMER SETUP - Costruzione segmenti per modalita' (stile SmartWOD)
+// ============================================================================
+
+export type GuidedTimerParams = {
+  // AMRAP / For Time
+  totalMinutes?: number
+  totalSeconds?: number
+  // EMOM
+  intervalSeconds?: number
+  rounds?: number
+  // Tabata
+  workSeconds?: number
+  restSeconds?: number
+}
+
+/**
+ * Costruisce una WodConfig a partire da un setup guidato per modalita':
+ * - AMRAP: un unico blocco di lavoro della durata totale.
+ * - For Time: un unico blocco di lavoro pari al time cap (il display conta in
+ *   avanti, ma il cap definisce la durata).
+ * - EMOM: N round di lavoro, uno per intervallo.
+ * - Tabata: N round di lavoro + recupero alternati.
+ */
+export function buildGuidedWodConfig(
+  mode: WodMode,
+  params: GuidedTimerParams
+): WodConfig {
+  const segments: WodTimerSegment[] = []
+
+  if (mode === 'AMRAP' || mode === 'For Time') {
+    const totalSeconds =
+      params.totalSeconds ?? Math.round((params.totalMinutes ?? 10) * 60)
+    segments.push({
+      id: `${mode === 'AMRAP' ? 'amrap' : 'fortime'}-1`,
+      phase: 'work',
+      durationSeconds: Math.max(5, totalSeconds),
+      label: mode,
+    })
+  } else if (mode === 'EMOM') {
+    const interval = Math.max(5, Math.round(params.intervalSeconds ?? 60))
+    const rounds = Math.max(1, Math.round(params.rounds ?? 10))
+    for (let round = 1; round <= rounds; round += 1) {
+      segments.push({
+        id: `emom-${round}`,
+        phase: 'work',
+        durationSeconds: interval,
+        label: `Round ${round}`,
+      })
+    }
+  } else if (mode === 'TABATA') {
+    const work = Math.max(5, Math.round(params.workSeconds ?? 20))
+    const rest = Math.max(0, Math.round(params.restSeconds ?? 10))
+    const rounds = Math.max(1, Math.round(params.rounds ?? 8))
+    for (let round = 1; round <= rounds; round += 1) {
+      segments.push({
+        id: `tabata-work-${round}`,
+        phase: 'work',
+        durationSeconds: work,
+        label: `Work ${round}`,
+      })
+      if (rest > 0) {
+        segments.push({
+          id: `tabata-rest-${round}`,
+          phase: 'rest',
+          durationSeconds: rest,
+          label: `Rest ${round}`,
+        })
+      }
+    }
+  }
+
+  return normalizeWodConfig({ mode, segments }) || { mode, segments: [] }
+}
+
+/**
+ * Indica se, al secondo assoluto indicato, si sta ENTRANDO nell'ultimo blocco
+ * di lavoro della sequenza (per l'annuncio "last round" di EMOM/Tabata).
+ */
+export function isEnteringLastWorkSegment(
+  config: WodConfig | null,
+  elapsedSeconds: number
+): boolean {
+  const segments = getWodTimerSegments(config)
+  if (segments.length <= 1) {
+    return false
+  }
+
+  const workIndexes = segments
+    .map((segment, index) => ({ segment, index }))
+    .filter((entry) => entry.segment.phase === 'work')
+    .map((entry) => entry.index)
+
+  const lastWorkIndex = workIndexes[workIndexes.length - 1]
+  if (lastWorkIndex === undefined) {
+    return false
+  }
+
+  const timeline = getTimerTimelineState(config, elapsedSeconds)
+  return (
+    timeline.currentSegmentIndex === lastWorkIndex &&
+    timeline.elapsedSegmentSeconds === 0
+  )
+}
