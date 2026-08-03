@@ -73,6 +73,7 @@ function TimerPage() {
   const [configSource, setConfigSource] = useState<'guided' | 'recognized'>('guided')
   const [recognizedConfig, setRecognizedConfig] = useState<WodConfig | null>(null)
   const [recognizedNote, setRecognizedNote] = useState<string | null>(null)
+  const [wodText, setWodText] = useState('')
 
   // Setup guidato per modalita'
   const [amrapMinutes, setAmrapMinutes] = useState(20)
@@ -155,6 +156,7 @@ function TimerPage() {
     try {
       const stored = sessionStorage.getItem(TIMER_WOD_STORAGE_KEY)
       if (stored && stored.trim()) {
+        setWodText(stored)
         const parsed = normalizeWodConfig(workoutTextToWodConfig(stored))
         if (parsed && parsed.segments && parsed.segments.length > 0) {
           setRecognizedConfig(parsed)
@@ -586,7 +588,7 @@ function TimerPage() {
         {/* Setup (solo quando fermo) */}
         {isConfigured && (
           <div className="space-y-5">
-            <WorkoutParser onApply={applyRecognizedConfig} />
+            <WorkoutParser initialText={wodText} onApply={applyRecognizedConfig} />
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5 space-y-4 shadow-2xl">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-zinc-500">
@@ -630,7 +632,7 @@ function TimerPage() {
               )}
 
               {configSource === 'guided' && mode === 'EMOM' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <NumberField
                     label="Intervallo (secondi)"
                     value={emomIntervalSeconds}
@@ -650,7 +652,7 @@ function TimerPage() {
               )}
 
               {configSource === 'guided' && mode === 'TABATA' && (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <NumberField
                     label="Lavoro (s)"
                     value={tabataWork}

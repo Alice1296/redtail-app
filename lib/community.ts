@@ -834,6 +834,82 @@ function parseWorkoutLineV2(line: string): ParsedWorkoutBlock | null {
   }
 }
 
+function workoutOnOffToSeconds(num: string, unit?: string): number | null {
+  const parsed = parseWorkoutDecimal(num)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  const isMinutes = unit
+    ? /^(?:'|‘|’|′|min|mins?|minute|minutes)$/i.test(unit)
+    : false
+  return Math.round(isMinutes ? parsed * 60 : parsed)
+}
+
+/** Durata totale in secondi ricavata da "EMOM 20'", "AMRAP 12'", "20 min"... */
+function detectTotalSeconds(text: string): number | null {
+  const explicit = text.match(
+    /(?:emom|amrap|for\s*time|for)\s+(\d+(?:[.,]\d+)?)\s*(?:'|‘|’|′|min\b|minutes?\b)/i
+  )
+  if (explicit) {
+    return Math.round(parseWorkoutDecimal(explicit[1]) * 60)
+  }
+
+  const generic = text.match(/(\d+(?:[.,]\d+)?)\s*(?:'|‘|’|′|min\b|minutes?\b)/i)
+  if (generic) {
+    return Math.round(parseWorkoutDecimal(generic[1]) * 60)
+  }
+
+  return null
+}
+
+const ON_OFF_UNIT = String.raw`(?:["'“”‘’′″]|min|mins?|minutes?|sec|secs?|secondi?|s)`
+
+/**
+ * Riconosce una struttura a intervalli lavoro/recupero scritta come
+ * "40\" On - 20\" Off", "40s on 20s off", "1' work / 30\" rest"... combinata
+ * con una durata totale (es. "EMOM 20'"). Restituisce i round di work/rest.
+ */
+function detectIntervalWorkout(text: string): {
+  workSeconds: number
+  restSeconds: number
+  rounds: number
+  totalSeconds: number
+} | null {
+  const match = text.match(
+    new RegExp(
+      `(\\d+(?:[.,]\\d+)?)\\s*(${ON_OFF_UNIT})?\\s*(?:on|work|lavoro)\\b[^0-9]{0,12}?(\\d+(?:[.,]\\d+)?)\\s*(${ON_OFF_UNIT})?\\s*(?:off|rest|recupero|riposo)\\b`,
+      'i'
+    )
+  )
+
+  if (!match) {
+    return null
+  }
+
+  const workSeconds = workoutOnOffToSeconds(match[1], match[2])
+  const restSeconds = workoutOnOffToSeconds(match[3], match[4])
+
+  if (!workSeconds || restSeconds === null) {
+    return null
+  }
+
+  const totalSeconds = detectTotalSeconds(text)
+  const roundLength = workSeconds + restSeconds
+
+  if (!totalSeconds || roundLength <= 0) {
+    return null
+  }
+
+  const rounds = Math.max(1, Math.round(totalSeconds / roundLength))
+
+  return {
+    workSeconds,
+    restSeconds,
+    rounds,
+    totalSeconds: rounds * roundLength,
+  }
+}
+
 export function parseWorkoutText(workoutText: string): WorkoutParseResult {
   if (!workoutText || workoutText.trim().length === 0) {
     return {
@@ -843,6 +919,38 @@ export function parseWorkoutText(workoutText: string): WorkoutParseResult {
       totalDurationSeconds: null,
       confidence: 0,
       warnings: ['Testo vuoto'],
+    }
+  }
+
+  // Intervalli lavoro/recupero (On/Off) con durata totale -> Tabata di round.
+  const intervalWorkout = detectIntervalWorkout(workoutText)
+  if (intervalWorkout) {
+    const intervalBlocks: ParsedWorkoutBlock[] = []
+
+    for (let round = 1; round <= intervalWorkout.rounds; round += 1) {
+      intervalBlocks.push({
+        type: 'exercise',
+        duration: intervalWorkout.workSeconds,
+        label: `Work ${round} (${formatTimerDuration(intervalWorkout.workSeconds)})`,
+        rawText: '',
+      })
+      if (intervalWorkout.restSeconds > 0) {
+        intervalBlocks.push({
+          type: 'rest',
+          duration: intervalWorkout.restSeconds,
+          label: `Rest ${round} (${formatTimerDuration(intervalWorkout.restSeconds)})`,
+          rawText: '',
+        })
+      }
+    }
+
+    return {
+      blocks: intervalBlocks,
+      isValid: true,
+      detectedMode: 'TABATA',
+      totalDurationSeconds: intervalWorkout.totalSeconds,
+      confidence: 0.9,
+      warnings: [],
     }
   }
 
