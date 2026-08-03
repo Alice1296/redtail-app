@@ -893,14 +893,25 @@ function detectIntervalWorkout(text: string): {
     return null
   }
 
-  const totalSeconds = detectTotalSeconds(text)
   const roundLength = workSeconds + restSeconds
-
-  if (!totalSeconds || roundLength <= 0) {
+  if (roundLength <= 0) {
     return null
   }
 
-  const rounds = Math.max(1, Math.round(totalSeconds / roundLength))
+  // I round arrivano da un conteggio esplicito ("x 4 Sets", "4 Rounds") se
+  // presente, altrimenti si ricavano da una durata totale ("EMOM 20'").
+  const explicitSets = extractWorkoutSets(text)
+  let rounds: number
+
+  if (explicitSets && explicitSets > 0) {
+    rounds = explicitSets
+  } else {
+    const totalSeconds = detectTotalSeconds(text)
+    if (!totalSeconds) {
+      return null
+    }
+    rounds = Math.max(1, Math.round(totalSeconds / roundLength))
+  }
 
   return {
     workSeconds,
