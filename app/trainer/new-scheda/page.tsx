@@ -22,11 +22,23 @@ const SECTION_OPTIONS: Array<{ value: SectionKey; label: string }> = [
   { value: 'wod', label: 'WOD' },
 ]
 
+const EMPTY_SECTION_TEXT: Record<SectionKey, string> = {
+  mobility: '',
+  strength: '',
+  wod: '',
+}
+
 type AssignResult = {
   clientId: string
   clientName: string
-  week?: number
+  assignments: Array<{ section: SectionKey; week: number }>
   error?: string
+}
+
+const SECTION_LABEL: Record<SectionKey, string> = {
+  mobility: 'Mobility',
+  strength: 'Strength',
+  wod: 'WOD',
 }
 
 export default function NewSchedaPage() {
@@ -34,9 +46,12 @@ export default function NewSchedaPage() {
   const [clients, setClients] = useState<ClientProfile[]>([])
   const [loadingClients, setLoadingClients] = useState(true)
   const [day, setDay] = useState<DayKey>('monday')
-  const [section, setSection] = useState<SectionKey>('strength')
-  const [content, setContent] = useState('')
-  const [coachNote, setCoachNote] = useState('')
+  const [content, setContent] = useState<Record<SectionKey, string>>({
+    ...EMPTY_SECTION_TEXT,
+  })
+  const [coachNote, setCoachNote] = useState<Record<SectionKey, string>>({
+    ...EMPTY_SECTION_TEXT,
+  })
   const [scoreType, setScoreType] = useState<ScoreType | ''>('')
   const [scoreLabel, setScoreLabel] = useState('')
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set())
@@ -101,12 +116,16 @@ export default function NewSchedaPage() {
     })
   }
 
+  const filledSections = SECTION_OPTIONS.filter(
+    (option) => content[option.value].trim().length > 0
+  )
+
   async function handleSubmit() {
     setError(null)
     setResults(null)
 
-    if (!content.trim()) {
-      setError('Scrivi il contenuto della scheda')
+    if (filledSections.length === 0) {
+      setError('Compila almeno una sezione (Mobility, Strength o WOD)')
       return
     }
 
@@ -132,11 +151,13 @@ export default function NewSchedaPage() {
         },
         body: JSON.stringify({
           day,
-          section,
-          content,
-          coachNote,
-          scoreType: section === 'wod' ? scoreType : '',
-          scoreLabel: section === 'wod' ? scoreLabel : '',
+          scoreType,
+          scoreLabel,
+          sections: filledSections.map((option) => ({
+            section: option.value,
+            content: content[option.value],
+            coachNote: coachNote[option.value],
+          })),
           clientIds: Array.from(selectedClientIds),
         }),
       })
@@ -156,8 +177,8 @@ export default function NewSchedaPage() {
   }
 
   function resetForCreatingAnother() {
-    setContent('')
-    setCoachNote('')
+    setContent({ ...EMPTY_SECTION_TEXT })
+    setCoachNote({ ...EMPTY_SECTION_TEXT })
     setScoreType('')
     setScoreLabel('')
     setSelectedClientIds(new Set())
@@ -223,8 +244,9 @@ export default function NewSchedaPage() {
             priority
           />
           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-            Scrivi una sezione una sola volta e assegnala a piu atleti: verra
-            inserita automaticamente nella prima settimana libera di ciascuno.
+            Compila le sezioni che vuoi e assegnale a piu atleti: ogni sezione
+            verra inserita nella prima settimana libera di ciascuno. Le sezioni
+            lasciate vuote vengono ignorate.
           </p>
         </div>
 
@@ -257,76 +279,75 @@ export default function NewSchedaPage() {
           </div>
         </div>
 
-        <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
-          <label className="text-red-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2">
-            <div className="w-1.5 h-4 bg-red-600 rounded-full" />
-            Sezione
-          </label>
-          <div className="flex gap-2">
-            {SECTION_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setSection(option.value)}
-                className={`flex-1 rounded-xl border px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${
-                  section === option.value
-                    ? 'bg-red-600 border-red-500 text-white'
-                    : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-red-600 hover:text-red-400'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+        {SECTION_OPTIONS.map((option) => (
+          <div
+            key={option.value}
+            className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl"
+          >
+            <label className="text-red-500 font-black uppercase text-[11px] tracking-widest flex items-center gap-2">
+              <div className="w-1.5 h-4 bg-red-600 rounded-full" />
+              {option.label}
+            </label>
 
-          <textarea
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            placeholder={`Scrivi il programma ${section}...`}
-            className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-40 text-sm outline-none focus:border-red-600 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-700"
-          />
+            <textarea
+              value={content[option.value]}
+              onChange={(event) =>
+                setContent((current) => ({
+                  ...current,
+                  [option.value]: event.target.value,
+                }))
+              }
+              placeholder={`Scrivi il programma ${option.label} (lascia vuoto per saltare)...`}
+              className="w-full bg-black border border-zinc-800 p-4 rounded-2xl h-40 text-sm outline-none focus:border-red-600 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-700"
+            />
 
-          {section === 'wod' && (
-            <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                Score per leaderboard (opzionale)
-              </p>
+            {option.value === 'wod' && (
+              <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                  Score per leaderboard (opzionale)
+                </p>
 
-              <select
-                value={scoreType}
-                onChange={(event) => setScoreType(event.target.value as ScoreType | '')}
-                className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
-              >
-                <option value="">Nessun punteggio</option>
-                {SCORE_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                <select
+                  value={scoreType}
+                  onChange={(event) => setScoreType(event.target.value as ScoreType | '')}
+                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200"
+                >
+                  <option value="">Nessun punteggio</option>
+                  {SCORE_TYPE_OPTIONS.map((scoreOption) => (
+                    <option key={scoreOption.value} value={scoreOption.value}>
+                      {scoreOption.label}
+                    </option>
+                  ))}
+                </select>
 
-              <input
-                value={scoreLabel}
-                onChange={(event) => setScoreLabel(event.target.value)}
-                placeholder="Es. Time cap 12', Max reps, Peso migliore..."
-                className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200 placeholder:text-zinc-600"
+                <input
+                  value={scoreLabel}
+                  onChange={(event) => setScoreLabel(event.target.value)}
+                  placeholder="Es. Time cap 12', Max reps, Peso migliore..."
+                  className="w-full bg-black border border-zinc-800 p-3 rounded-xl text-sm outline-none focus:border-red-600 text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+            )}
+
+            <div className="bg-yellow-900/20 border border-yellow-700/50 p-4 rounded-xl space-y-2">
+              <label className="text-yellow-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+                <div className="w-1.5 h-2 bg-yellow-500 rounded-full" />
+                Note coach (opzionale)
+              </label>
+              <textarea
+                value={coachNote[option.value]}
+                onChange={(event) =>
+                  setCoachNote((current) => ({
+                    ...current,
+                    [option.value]: event.target.value,
+                  }))
+                }
+                placeholder={`Note per l'atleta su ${option.label}...`}
+                className="w-full bg-black border border-yellow-700/30 p-3 rounded-lg h-24 text-xs outline-none focus:border-yellow-500 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-600"
               />
             </div>
-          )}
-
-          <div className="bg-yellow-900/20 border border-yellow-700/50 p-4 rounded-xl space-y-2">
-            <label className="text-yellow-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
-              <div className="w-1.5 h-2 bg-yellow-500 rounded-full" />
-              Note coach (opzionale)
-            </label>
-            <textarea
-              value={coachNote}
-              onChange={(event) => setCoachNote(event.target.value)}
-              placeholder={`Note per l'atleta su ${section}...`}
-              className="w-full bg-black border border-yellow-700/30 p-3 rounded-lg h-24 text-xs outline-none focus:border-yellow-500 transition-all shadow-inner text-zinc-200 placeholder:text-zinc-600"
-            />
           </div>
-        </div>
+        ))}
 
         <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-6 space-y-4 shadow-2xl">
           <div className="flex items-center justify-between gap-3">
@@ -400,7 +421,9 @@ export default function NewSchedaPage() {
           disabled={submitting}
           className="w-full max-w-xl mx-auto block bg-red-600 p-4 rounded-2xl font-black uppercase italic tracking-widest shadow-xl shadow-red-600/40 active:scale-95 transition-all disabled:opacity-50"
         >
-          {submitting ? 'Assegnazione in corso...' : 'Crea scheda e assegna'}
+          {submitting
+            ? 'Assegnazione in corso...'
+            : `Crea scheda e assegna (${filledSections.length} sez.)`}
         </button>
 
         {results && (
@@ -411,16 +434,28 @@ export default function NewSchedaPage() {
             {results.map((result) => (
               <div
                 key={result.clientId}
-                className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-xs font-bold ${
+                className={`rounded-xl border p-3 text-xs font-bold ${
                   result.error
                     ? 'border-red-600/40 bg-red-600/10 text-red-300'
                     : 'border-green-600/40 bg-green-600/10 text-green-300'
                 }`}
               >
-                <span>{result.clientName}</span>
-                <span>
-                  {result.error ? result.error : `Settimana ${result.week}`}
-                </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{result.clientName}</span>
+                  {result.error && <span>{result.error}</span>}
+                </div>
+                {!result.error && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {result.assignments.map((assignment) => (
+                      <span
+                        key={assignment.section}
+                        className="rounded-md border border-green-600/40 bg-green-600/10 px-2 py-0.5 text-[10px] uppercase tracking-wide"
+                      >
+                        {SECTION_LABEL[assignment.section]} → W{assignment.week}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 

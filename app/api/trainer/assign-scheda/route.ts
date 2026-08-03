@@ -14,6 +14,12 @@ type SectionKey = 'mobility' | 'strength' | 'wod'
 const VALID_SECTIONS: SectionKey[] = ['mobility', 'strength', 'wod']
 const VALID_DAYS = DAYS.map((day) => day.key)
 
+type SectionInput = {
+  section: SectionKey
+  content: string
+  coachNote: string
+}
+
 type WorkoutRow = {
   week_number: number
   mobility: string | null
@@ -45,6 +51,31 @@ function createAuthedClients(req: NextRequest) {
     : null
 
   return { authClient, adminClient: adminClient ?? authClient }
+}
+
+/**
+ * Trova la prima settimana (>=1) in cui la sezione richiesta e' ancora vuota
+ * per quel giorno, riusando righe gia' parzialmente compilate da altre sezioni.
+ */
+function findFirstFreeWeek(
+  rowsByWeek: Map<number, WorkoutRow>,
+  section: SectionKey
+): number {
+  const maxWeek = rowsByWeek.size > 0 ? Math.max(...rowsByWeek.keys()) : 0
+
+  for (let week = 1; week <= maxWeek + 1; week += 1) {
+    const row = rowsByWeek.get(week)
+
+    if (!row) {
+      return week
+    }
+
+    if (!row[section]) {
+      return week
+    }
+  }
+
+  return maxWeek + 1
 }
 
 export async function POST(req: NextRequest) {
@@ -79,9 +110,6 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const day = String(body?.day || '') as DayKey
-    const section = String(body?.section || '') as SectionKey
-    const content = typeof body?.content === 'string' ? body.content.trim() : ''
-    const coachNote = typeof body?.coachNote === 'string' ? body.coachNote.trim() : ''
     const scoreType = (body?.scoreType || '') as ScoreType | ''
     const scoreLabel =
       typeof body?.scoreLabel === 'string' ? body.scoreLabel.trim() : ''
@@ -89,16 +117,27 @@ export async function POST(req: NextRequest) {
       ? body.clientIds.filter((value: unknown): value is string => typeof value === 'string')
       : []
 
+    const rawSections: unknown[] = Array.isArray(body?.sections) ? body.sections : []
+    const sections: SectionInput[] = rawSections
+      .map((raw) => {
+        const item = raw as Record<string, unknown>
+        return {
+          section: String(item?.section || '') as SectionKey,
+          content: typeof item?.content === 'string' ? item.content.trim() : '',
+          coachNote: typeof item?.coachNote === 'string' ? item.coachNote.trim() : '',
+        }
+      })
+      .filter((item) => VALID_SECTIONS.includes(item.section) && item.content)
+
     if (!VALID_DAYS.includes(day)) {
       return NextResponse.json({ error: 'Giorno non valido' }, { status: 400 })
     }
 
-    if (!VALID_SECTIONS.includes(section)) {
-      return NextResponse.json({ error: 'Sezione non valida' }, { status: 400 })
-    }
-
-    if (!content) {
-      return NextResponse.json({ error: 'Il contenuto della scheda e obbligatorio' }, { status: 400 })
+    if (sections.length === 0) {
+      return NextResponse.json(
+        { error: 'Compila almeno una sezione (mobility, strength o wod)' },
+        { status: 400 }
+      )
     }
 
     if (clientIds.length === 0) {
@@ -126,7 +165,7 @@ export async function POST(req: NextRequest) {
     const results: Array<{
       clientId: string
       clientName: string
-      week?: number
+      assignments: Array<{ section: SectionKey; week: number }>
       error?: string
     }> = []
 
@@ -145,71 +184,87 @@ export async function POST(req: NextRequest) {
           throw fetchError
         }
 
+        // Mappa in-memory dello stato del giorno: la aggiorniamo mano a mano che
+        // assegniamo le sezioni, cosi la sezione successiva "vede" quelle gia'
+        // piazzate e puo' riusare la stessa settimana quando e' libera.
         const rowsByWeek = new Map<number, WorkoutRow>(
-          ((existingRows || []) as WorkoutRow[]).map((row) => [row.week_number, row])
+          ((existingRows || []) as WorkoutRow[]).map((row) => [
+            row.week_number,
+            { ...row },
+          ])
         )
-        const maxWeek = rowsByWeek.size > 0 ? Math.max(...rowsByWeek.keys()) : 0
 
-        let targetWeek: number | null = null
-        let reuseRow: WorkoutRow | null = null
+        const touchedWeeks = new Set<number>()
+        const assignments: Array<{ section: SectionKey; week: number }> = []
 
-        for (let week = 1; week <= maxWeek + 1; week += 1) {
-          const row = rowsByWeek.get(week)
+        for (const sectionInput of sections) {
+          const targetWeek = findFirstFreeWeek(rowsByWeek, sectionInput.section)
 
+          let row = rowsByWeek.get(targetWeek)
           if (!row) {
-            targetWeek = week
-            break
+            row = {
+              week_number: targetWeek,
+              mobility: null,
+              strength: null,
+              wod: null,
+              coach_notes: '{}',
+            }
+            rowsByWeek.set(targetWeek, row)
           }
 
-          if (!row[section]) {
-            targetWeek = week
-            reuseRow = row
-            break
+          row[sectionInput.section] = sectionInput.content
+
+          let parsedNotes: Record<string, unknown> = {}
+          try {
+            parsedNotes =
+              typeof row.coach_notes === 'string'
+                ? JSON.parse(row.coach_notes || '{}')
+                : {}
+          } catch {
+            parsedNotes = {}
+          }
+
+          parsedNotes[sectionInput.section] = sectionInput.coachNote
+
+          if (sectionInput.section === 'wod') {
+            parsedNotes.wod_score_type = scoreType || parsedNotes.wod_score_type || null
+            parsedNotes.wod_score_label =
+              scoreLabel || parsedNotes.wod_score_label || null
+          }
+
+          row.coach_notes = JSON.stringify(parsedNotes)
+
+          touchedWeeks.add(targetWeek)
+          assignments.push({ section: sectionInput.section, week: targetWeek })
+        }
+
+        for (const week of touchedWeeks) {
+          const row = rowsByWeek.get(week)!
+
+          const { error: upsertError } = await adminClient.from('workouts').upsert(
+            {
+              client_id: clientId,
+              week_number: week,
+              day,
+              mobility: row.mobility,
+              strength: row.strength,
+              wod: row.wod,
+              coach_notes: row.coach_notes,
+            },
+            { onConflict: 'client_id,week_number,day' }
+          )
+
+          if (upsertError) {
+            throw upsertError
           }
         }
 
-        if (targetWeek === null) {
-          throw new Error('Impossibile determinare una settimana libera')
-        }
-
-        let parsedNotes: Record<string, unknown> = {}
-        try {
-          parsedNotes =
-            typeof reuseRow?.coach_notes === 'string'
-              ? JSON.parse(reuseRow.coach_notes || '{}')
-              : {}
-        } catch {
-          parsedNotes = {}
-        }
-
-        parsedNotes[section] = coachNote
-
-        if (section === 'wod') {
-          parsedNotes.wod_score_type = scoreType || parsedNotes.wod_score_type || null
-          parsedNotes.wod_score_label = scoreLabel || parsedNotes.wod_score_label || null
-        }
-
-        const payload = {
-          client_id: clientId,
-          week_number: targetWeek,
-          day,
-          [section]: content,
-          coach_notes: JSON.stringify(parsedNotes),
-        }
-
-        const { error: upsertError } = await adminClient
-          .from('workouts')
-          .upsert(payload, { onConflict: 'client_id,week_number,day' })
-
-        if (upsertError) {
-          throw upsertError
-        }
-
-        results.push({ clientId, clientName, week: targetWeek })
+        results.push({ clientId, clientName, assignments })
       } catch (err: unknown) {
         results.push({
           clientId,
           clientName,
+          assignments: [],
           error: err instanceof Error ? err.message : 'Errore assegnazione scheda',
         })
       }
