@@ -631,6 +631,13 @@ function ClientPage() {
       gainNode.connect(audioCtx.destination)
       oscillator.start()
       oscillator.stop(audioCtx.currentTime + duration)
+      // Chiude il contesto a fine beep: senza questo se ne accumulano molti e
+      // il browser (limite ~6 AudioContext) smette di riprodurre l'audio.
+      oscillator.onended = () => {
+        try {
+          void audioCtx.close()
+        } catch {}
+      }
     } catch {}
   }
   
@@ -666,6 +673,23 @@ function ClientPage() {
   const lastAnnounced30SecRef = useRef<string | null>(null)
   const lastCountdownSecRef = useRef(-1)
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
+
+  // Pulizia all'uscita dalla pagina: ferma il timer, la voce e rilascia il
+  // wake lock, cosi' tornando indietro (es. dal timer) non restano attivi.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+      }
+      try {
+        window.speechSynthesis?.cancel()
+      } catch {}
+      try {
+        void wakeLockRef.current?.release()
+      } catch {}
+      wakeLockRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     async function init() {

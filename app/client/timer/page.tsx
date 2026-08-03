@@ -249,10 +249,22 @@ function TimerPage() {
     }
   }
 
+  // Pulizia all'uscita dalla pagina (Indietro / refresh): ferma timer, voce,
+  // wake lock e chiude l'AudioContext per non accumularli tra un ingresso e
+  // l'altro (i browser ne consentono un numero limitato).
   useEffect(() => {
     return () => {
       clearTick()
       void releaseWakeLock()
+      try {
+        window.speechSynthesis?.cancel()
+      } catch {}
+      try {
+        if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+          void audioCtxRef.current.close()
+        }
+      } catch {}
+      audioCtxRef.current = null
     }
   }, [])
 
