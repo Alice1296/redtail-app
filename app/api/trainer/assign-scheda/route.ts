@@ -22,6 +22,7 @@ type SectionInput = {
 
 type WorkoutRow = {
   week_number: number
+  day: string
   mobility: string | null
   strength: string | null
   wod: string | null
@@ -62,20 +63,37 @@ function hasContent(row: WorkoutRow): boolean {
 }
 
 /**
- * La scheda va sempre "in coda": nella settimana subito successiva all'ultima
- * che ha davvero dei contenuti per quel giorno. Cosi non finisce mai dentro un
- * buco precedente / dietro alla progressione attuale dell'atleta.
+ * Determina la settimana in cui inserire la scheda.
+ *
+ * Il calcolo e' GLOBALE su tutti i giorni dell'atleta, non sul singolo giorno:
+ * si prende la "frontiera", cioe' la settimana piu' alta che ha davvero dei
+ * contenuti (qualsiasi giorno). Se in quella settimana il giorno richiesto e'
+ * ancora libero ci si scrive dentro (cosi i vari giorni caricati uno dopo
+ * l'altro compongono la stessa, unica, settimana nuova); se invece quel giorno
+ * e' gia' occupato si apre la settimana successiva.
+ *
+ * Questo evita il bug per cui un giorno (es. giovedi/venerdi) con dei "buchi"
+ * nelle settimane recenti finiva a riempire quei buchi in una settimana
+ * precedente, spalmando la settimana nuova su piu' settimane.
  */
-function findAppendWeek(rowsByWeek: Map<number, WorkoutRow>): number {
-  let lastFilledWeek = 0
+function findTargetWeek(rows: WorkoutRow[], day: string): number {
+  let frontierWeek = 0
 
-  for (const row of rowsByWeek.values()) {
-    if (hasContent(row) && row.week_number > lastFilledWeek) {
-      lastFilledWeek = row.week_number
+  for (const row of rows) {
+    if (hasContent(row) && row.week_number > frontierWeek) {
+      frontierWeek = row.week_number
     }
   }
 
-  return lastFilledWeek + 1
+  if (frontierWeek === 0) {
+    return 1
+  }
+
+  const dayAlreadyFilledOnFrontier = rows.some(
+    (row) => row.week_number === frontierWeek && row.day === day && hasContent(row)
+  )
+
+  return dayAlreadyFilledOnFrontier ? frontierWeek + 1 : frontierWeek
 }
 
 export async function POST(req: NextRequest) {
@@ -175,25 +193,17 @@ export async function POST(req: NextRequest) {
       try {
         const { data: existingRows, error: fetchError } = await adminClient
           .from('workouts')
-          .select('week_number, mobility, strength, wod, coach_notes')
+          .select('week_number, day, mobility, strength, wod, coach_notes')
           .eq('client_id', clientId)
-          .eq('day', day)
           .order('week_number', { ascending: true })
 
         if (fetchError) {
           throw fetchError
         }
 
-        const rowsByWeek = new Map<number, WorkoutRow>(
-          ((existingRows || []) as WorkoutRow[]).map((row) => [
-            row.week_number,
-            { ...row },
-          ])
-        )
-
-        // Tutte le sezioni compilate vanno nella stessa settimana: quella in
-        // coda, subito dopo l'ultima piena per quel giorno.
-        const targetWeek = findAppendWeek(rowsByWeek)
+        // Tutte le sezioni compilate vanno nella stessa settimana: quella
+        // calcolata sulla frontiera globale dell'atleta (vedi findTargetWeek).
+        const targetWeek = findTargetWeek((existingRows || []) as WorkoutRow[], day)
 
         const rowContent: Pick<WorkoutRow, 'mobility' | 'strength' | 'wod'> = {
           mobility: null,
