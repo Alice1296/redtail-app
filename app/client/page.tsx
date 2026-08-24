@@ -603,6 +603,15 @@ function ClientPage() {
   const [uploadingSection, setUploadingSection] = useState<string | null>(null)
   const [exportingWeekPdf, setExportingWeekPdf] = useState(false)
 
+  // Registrazione video in-app (webcam su PC)
+  const [recorderSection, setRecorderSection] = useState<string | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recorderStreamRef = useRef<MediaStream | null>(null)
+  const recorderChunksRef = useRef<Blob[]>([])
+  const recorderCancelRef = useRef(false)
+  const recorderPreviewRef = useRef<HTMLVideoElement | null>(null)
+
   // Visual Flash State
   const [isFlashing, setIsFlashing] = useState(false)
   const triggerFlash = () => {
@@ -1361,6 +1370,143 @@ function ClientPage() {
     }
   }
 
+  function isMobileDevice() {
+    if (typeof navigator === 'undefined') return false
+    const ua = navigator.userAgent || ''
+    const coarse =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || coarse
+  }
+
+  // Tocco su "Registra": su telefono apre la fotocamera nativa (input capture),
+  // su PC apre il registratore interno con anteprima e webcam.
+  function handleRecordClick(section: string) {
+    if (uploadingSection === section) return
+    if (isMobileDevice()) {
+      document.getElementById(`rec-${section}`)?.click()
+    } else {
+      void openRecorder(section)
+    }
+  }
+
+  function pickRecorderMime() {
+    if (typeof MediaRecorder === 'undefined') return ''
+    const candidates = [
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ]
+    for (const candidate of candidates) {
+      if (MediaRecorder.isTypeSupported(candidate)) return candidate
+    }
+    return ''
+  }
+
+  function stopRecorderStream() {
+    recorderStreamRef.current?.getTracks().forEach((track) => track.stop())
+    recorderStreamRef.current = null
+  }
+
+  async function openRecorder(section: string) {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert('Registrazione non supportata su questo browser. Usa Upload.')
+        return
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+      recorderStreamRef.current = stream
+      recorderCancelRef.current = false
+      setIsRecording(false)
+      setRecorderSection(section)
+    } catch {
+      alert('Impossibile accedere alla fotocamera. Controlla i permessi del browser.')
+    }
+  }
+
+  function startRecording() {
+    const stream = recorderStreamRef.current
+    if (!stream) return
+    recorderChunksRef.current = []
+    const mimeType = pickRecorderMime()
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recorderChunksRef.current.push(event.data)
+      }
+    }
+
+    recorder.onstop = () => {
+      const section = recorderSection
+      const type = recorder.mimeType || mimeType || 'video/webm'
+      const chunks = recorderChunksRef.current
+      recorderChunksRef.current = []
+      stopRecorderStream()
+      setIsRecording(false)
+      setRecorderSection(null)
+
+      if (recorderCancelRef.current || !section || chunks.length === 0) {
+        return
+      }
+
+      const ext = type.includes('mp4') ? 'mp4' : 'webm'
+      const blob = new Blob(chunks, { type })
+      const file = new File([blob], `registrazione-${Date.now()}.${ext}`, { type })
+      void handleVideoUpload(section, file)
+    }
+
+    recorderRef.current = recorder
+    recorder.start()
+    setIsRecording(true)
+  }
+
+  function stopRecording() {
+    // Ferma e fa partire l'upload (vedi onstop).
+    recorderCancelRef.current = false
+    try {
+      recorderRef.current?.stop()
+    } catch {}
+  }
+
+  function cancelRecorder() {
+    recorderCancelRef.current = true
+    try {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop()
+        return
+      }
+    } catch {}
+    stopRecorderStream()
+    setIsRecording(false)
+    setRecorderSection(null)
+  }
+
+  // Aggancia lo stream all'anteprima quando il registratore e' aperto.
+  useEffect(() => {
+    if (recorderSection && recorderPreviewRef.current && recorderStreamRef.current) {
+      recorderPreviewRef.current.srcObject = recorderStreamRef.current
+    }
+  }, [recorderSection])
+
+  // Pulizia stream se si lascia la pagina mentre il registratore e' aperto.
+  useEffect(() => {
+    return () => {
+      try {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+          recorderCancelRef.current = true
+          recorderRef.current.stop()
+        }
+      } catch {}
+      stopRecorderStream()
+    }
+  }, [])
+
   async function deleteVideo(section: string, videoUrl: string) {
     if (!user || !confirm('Eliminare il video?')) return
 
@@ -1731,6 +1877,18 @@ function ClientPage() {
                           handleVideoUpload(section, event.target.files[0])
                         }
                       />
+                      {/* Input fotocamera nativa (telefono): registra e carica. */}
+                      <input
+                        type="file"
+                        accept="video/*"
+                        capture="environment"
+                        id={`rec-${section}`}
+                        className="hidden"
+                        onChange={(event) =>
+                          event.target.files?.[0] &&
+                          handleVideoUpload(section, event.target.files[0])
+                        }
+                      />
                       <label
                         htmlFor={`v-${section}`}
                         className={`flex-1 flex items-center justify-center p-3 rounded-xl border border-zinc-800 text-[10px] font-black uppercase cursor-pointer ${
@@ -1745,6 +1903,15 @@ function ClientPage() {
                             ? `${logs[section]?.video_urls?.length || 0} video`
                             : 'Upload'}
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => handleRecordClick(section)}
+                        disabled={uploadingSection === section}
+                        className="flex-1 flex items-center justify-center gap-1.5 p-3 rounded-xl border border-red-600 bg-red-600/10 text-red-500 text-[10px] font-black uppercase active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-red-600" />
+                        {uploadingSection === section ? 'Wait...' : 'Registra'}
+                      </button>
                     </div>
 
                     {(logs[section]?.video_urls?.length || 0) > 0 && (
@@ -1791,6 +1958,61 @@ function ClientPage() {
           </div>
         )}
       </div>
+
+      {recorderSection && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md space-y-4 rounded-3xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl">
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-500">
+              <span
+                className={`w-2 h-2 rounded-full bg-red-600 ${
+                  isRecording ? 'animate-pulse' : ''
+                }`}
+              />
+              {isRecording ? 'Registrazione in corso' : 'Registra video'}
+            </p>
+
+            <video
+              ref={recorderPreviewRef}
+              autoPlay
+              muted
+              playsInline
+              className="w-full aspect-video rounded-2xl bg-black object-contain"
+            />
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={cancelRecorder}
+                className="flex-1 p-3 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-300 text-[11px] font-black uppercase active:scale-95 transition-all"
+              >
+                Annulla
+              </button>
+              {isRecording ? (
+                <button
+                  type="button"
+                  onClick={stopRecording}
+                  className="flex-[2] p-3 rounded-xl bg-red-600 text-white text-[11px] font-black uppercase active:scale-95 transition-all"
+                >
+                  Stop e carica
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="flex-[2] flex items-center justify-center gap-2 p-3 rounded-xl bg-red-600 text-white text-[11px] font-black uppercase active:scale-95 transition-all"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-white" />
+                  Avvia
+                </button>
+              )}
+            </div>
+
+            <p className="text-center text-[10px] font-bold text-zinc-500">
+              Il video viene caricato in automatico allo stop.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
