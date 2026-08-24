@@ -699,10 +699,17 @@ function parseWorkoutLineV2(line: string): ParsedWorkoutBlock | null {
       return null
     }
 
+    // "Amrap 4' x 3 Sets" -> AMRAP ripetuto 3 volte (i set vengono espansi in
+    // parseWorkoutText, intervallati dall'eventuale rest tra i set).
+    const sets = extractWorkoutSets(trimmed) || undefined
+
     return {
       type: 'amrap',
       duration,
-      label: `AMRAP ${formatTimerDuration(duration)}`,
+      sets,
+      label: sets
+        ? `AMRAP ${formatTimerDuration(duration)} x ${sets}`
+        : `AMRAP ${formatTimerDuration(duration)}`,
       rawText: trimmed,
     }
   }
@@ -970,7 +977,57 @@ export function parseWorkoutText(workoutText: string): WorkoutParseResult {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 
+  const rawBlocks: ParsedWorkoutBlock[] = []
+
+  for (const line of lines) {
+    const parsed = parseWorkoutLineV2(line)
+
+    if (parsed && parsed.type !== 'unknown') {
+      rawBlocks.push(parsed)
+    }
+  }
+
+  // Espansione dei blocchi a set ripetuti: "AMRAP 4' x 3 Sets" con un eventuale
+  // rest subito dopo ("-2' Rest b/S-") diventa 3 blocchi AMRAP intervallati da 2
+  // rest, cosi il timer crea davvero i 3 AMRAP separati dal recupero.
   const blocks: ParsedWorkoutBlock[] = []
+
+  for (let index = 0; index < rawBlocks.length; index += 1) {
+    const block = rawBlocks[index]
+
+    if (block.type === 'amrap' && block.duration && block.sets && block.sets > 1) {
+      const next = rawBlocks[index + 1]
+      const betweenRest =
+        next && next.type === 'rest' && next.duration ? next : null
+
+      for (let set = 1; set <= block.sets; set += 1) {
+        blocks.push({
+          type: 'amrap',
+          duration: block.duration,
+          label: `AMRAP ${formatTimerDuration(block.duration)} (${set}/${block.sets})`,
+          rawText: block.rawText,
+        })
+
+        if (betweenRest && set < block.sets) {
+          blocks.push({
+            type: 'rest',
+            duration: betweenRest.duration,
+            label: `Rest ${formatTimerDuration(betweenRest.duration as number)}`,
+            rawText: betweenRest.rawText,
+          })
+        }
+      }
+
+      if (betweenRest) {
+        index += 1 // il rest e' stato consumato come recupero tra i set
+      }
+
+      continue
+    }
+
+    blocks.push(block)
+  }
+
   const warnings: string[] = []
   let amrapCount = 0
   let emomCount = 0
@@ -978,20 +1035,14 @@ export function parseWorkoutText(workoutText: string): WorkoutParseResult {
   let totalSeconds = 0
   let emomWithoutSets = false
 
-  for (const line of lines) {
-    const parsed = parseWorkoutLineV2(line)
+  for (const block of blocks) {
+    if (block.type === 'amrap') amrapCount++
+    if (block.type === 'emom') emomCount++
+    if (block.type === 'rest') restCount++
+    if (block.type === 'emom' && !block.sets) emomWithoutSets = true
 
-    if (parsed && parsed.type !== 'unknown') {
-      blocks.push(parsed)
-
-      if (parsed.type === 'amrap') amrapCount++
-      if (parsed.type === 'emom') emomCount++
-      if (parsed.type === 'rest') restCount++
-      if (parsed.type === 'emom' && !parsed.sets) emomWithoutSets = true
-
-      if (parsed.duration) {
-        totalSeconds += parsed.duration
-      }
+    if (block.duration) {
+      totalSeconds += block.duration
     }
   }
 
