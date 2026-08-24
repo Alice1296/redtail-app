@@ -187,13 +187,14 @@ function TimerPage() {
     return audioCtxRef.current
   }
 
-  // Segnale sonoro pieno e rotondo, stile corno da palestra: piu' oscillatori
-  // sovrapposti (sawtooth + armoniche) filtrati passa-basso, con attacco
-  // morbido e coda lunga. Cosi il suono e' piu' corposo e "spalmato", non
-  // secco come il vecchio beep a onda quadra.
+  // Segnale sonoro pieno e squillante, tipo campanella/corno da palestra: toni
+  // puliti (triangle + sine sull'ottava) senza sawtooth (che a bassa frequenza
+  // "gracchiava"). Inviluppo con sustain: sale in fretta, resta pieno per quasi
+  // tutta la durata e chiude con una breve coda. Cosi il suono e' corposo e
+  // lungo, non un "bip" che si spegne subito.
   function playSignal(
-    frequency = 660,
-    duration = 0.35,
+    frequency = 880,
+    duration = 0.5,
     options: { intensity?: number; attack?: number } = {}
   ) {
     if (mutedRef.current || volumeRef.current <= 0) return
@@ -202,30 +203,25 @@ function TimerPage() {
       if (!audioCtx) return
       const now = audioCtx.currentTime
       const intensity = options.intensity ?? 1
-      const attack = options.attack ?? 0.02
-      const peak = Math.min(0.92, 0.25 + 0.6 * volumeRef.current) * intensity
+      const attack = options.attack ?? 0.015
+      const release = 0.12
+      const peak = Math.min(0.95, 0.3 + 0.6 * volumeRef.current) * intensity
+      const sustainUntil = Math.max(now + attack, now + duration - release)
 
-      // Inviluppo: salita morbida poi discesa esponenziale su tutta la durata.
+      // Inviluppo: attacco rapido -> sustain pieno -> breve rilascio.
       const env = audioCtx.createGain()
       env.gain.setValueAtTime(0.0001, now)
       env.gain.linearRampToValueAtTime(peak, now + attack)
-      env.gain.exponentialRampToValueAtTime(0.0001, now + Math.max(duration, attack + 0.05))
-
-      // Passa-basso per arrotondare le armoniche (meno metallico/secco).
-      const filter = audioCtx.createBiquadFilter()
-      filter.type = 'lowpass'
-      filter.frequency.setValueAtTime(Math.min(9000, frequency * 8), now)
-      filter.Q.setValueAtTime(0.7, now)
-
-      env.connect(filter)
-      filter.connect(audioCtx.destination)
+      env.gain.setValueAtTime(peak, sustainUntil)
+      env.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+      env.connect(audioCtx.destination)
 
       const partials: Array<{ ratio: number; type: OscillatorType; gain: number }> = [
-        { ratio: 1, type: 'sawtooth', gain: 0.42 }, // corpo
-        { ratio: 1.5, type: 'sine', gain: 0.22 }, // quinta, pienezza
-        { ratio: 2, type: 'sine', gain: 0.14 }, // ottava, brillantezza
+        { ratio: 1, type: 'triangle', gain: 0.5 }, // corpo pulito
+        { ratio: 2, type: 'sine', gain: 0.32 }, // ottava, brillantezza
+        { ratio: 3, type: 'sine', gain: 0.12 }, // armonica alta, presenza
       ]
-      const stopAt = now + Math.max(duration, attack + 0.05) + 0.05
+      const stopAt = now + duration + 0.05
 
       for (const partial of partials) {
         const osc = audioCtx.createOscillator()
@@ -316,7 +312,7 @@ function TimerPage() {
     // Cambio di blocco
     if (lastSegmentIdRef.current !== segment.id) {
       lastSegmentIdRef.current = segment.id
-      playSignal(760, 0.4)
+      playSignal(920, 0.5)
 
       if (segments.length > 1) {
         if (isEnteringLastWorkSegment(config, second)) {
@@ -352,9 +348,9 @@ function TimerPage() {
     // Conto alla rovescia finale di ogni blocco: gli ultimi 3" piu' acuti/pieni.
     if (remaining > 0 && remaining <= FINAL_BEEP_SECONDS) {
       if (remaining <= 3) {
-        playSignal(900, 0.3, { intensity: 1.05 })
+        playSignal(1100, 0.4, { intensity: 1.05 })
       } else {
-        playSignal(680, 0.24)
+        playSignal(860, 0.32)
       }
     }
   }
@@ -365,8 +361,8 @@ function TimerPage() {
     setStatus('done')
     setElapsed(totalSeconds)
     setRingFraction(1)
-    // Corno di fine: lungo e corposo.
-    playSignal(520, 1.2, { intensity: 1.2, attack: 0.03 })
+    // Corno di fine: alto, lungo e corposo.
+    playSignal(820, 1.5, { intensity: 1.25, attack: 0.02 })
     speak('Time')
     void releaseWakeLock()
   }
@@ -448,8 +444,8 @@ function TimerPage() {
 
       if (remaining <= 0) {
         clearTick()
-        // Segnale di via corposo dopo "three-two-one".
-        playSignal(660, 0.8, { intensity: 1.2, attack: 0.03 })
+        // Segnale di via alto e corposo dopo "three-two-one".
+        playSignal(960, 1.0, { intensity: 1.25, attack: 0.02 })
         startRunning(0)
       }
     }, 200)
