@@ -187,24 +187,57 @@ function TimerPage() {
     return audioCtxRef.current
   }
 
-  function playBeep(frequency = 660, duration = 0.15) {
+  // Segnale sonoro pieno e rotondo, stile corno da palestra: piu' oscillatori
+  // sovrapposti (sawtooth + armoniche) filtrati passa-basso, con attacco
+  // morbido e coda lunga. Cosi il suono e' piu' corposo e "spalmato", non
+  // secco come il vecchio beep a onda quadra.
+  function playSignal(
+    frequency = 660,
+    duration = 0.35,
+    options: { intensity?: number; attack?: number } = {}
+  ) {
     if (mutedRef.current || volumeRef.current <= 0) return
     try {
       const audioCtx = ensureAudioContext()
       if (!audioCtx) return
-      const oscillator = audioCtx.createOscillator()
-      const gainNode = audioCtx.createGain()
-      const peak = 0.001 + 0.28 * volumeRef.current
+      const now = audioCtx.currentTime
+      const intensity = options.intensity ?? 1
+      const attack = options.attack ?? 0.02
+      const peak = Math.min(0.92, 0.25 + 0.6 * volumeRef.current) * intensity
 
-      oscillator.type = 'square'
-      oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime)
-      gainNode.gain.setValueAtTime(peak, audioCtx.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration)
+      // Inviluppo: salita morbida poi discesa esponenziale su tutta la durata.
+      const env = audioCtx.createGain()
+      env.gain.setValueAtTime(0.0001, now)
+      env.gain.linearRampToValueAtTime(peak, now + attack)
+      env.gain.exponentialRampToValueAtTime(0.0001, now + Math.max(duration, attack + 0.05))
 
-      oscillator.connect(gainNode)
-      gainNode.connect(audioCtx.destination)
-      oscillator.start()
-      oscillator.stop(audioCtx.currentTime + duration)
+      // Passa-basso per arrotondare le armoniche (meno metallico/secco).
+      const filter = audioCtx.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.setValueAtTime(Math.min(9000, frequency * 8), now)
+      filter.Q.setValueAtTime(0.7, now)
+
+      env.connect(filter)
+      filter.connect(audioCtx.destination)
+
+      const partials: Array<{ ratio: number; type: OscillatorType; gain: number }> = [
+        { ratio: 1, type: 'sawtooth', gain: 0.42 }, // corpo
+        { ratio: 1.5, type: 'sine', gain: 0.22 }, // quinta, pienezza
+        { ratio: 2, type: 'sine', gain: 0.14 }, // ottava, brillantezza
+      ]
+      const stopAt = now + Math.max(duration, attack + 0.05) + 0.05
+
+      for (const partial of partials) {
+        const osc = audioCtx.createOscillator()
+        const oscGain = audioCtx.createGain()
+        osc.type = partial.type
+        osc.frequency.setValueAtTime(frequency * partial.ratio, now)
+        oscGain.gain.setValueAtTime(partial.gain, now)
+        osc.connect(oscGain)
+        oscGain.connect(env)
+        osc.start(now)
+        osc.stop(stopAt)
+      }
     } catch {}
   }
 
@@ -283,7 +316,7 @@ function TimerPage() {
     // Cambio di blocco
     if (lastSegmentIdRef.current !== segment.id) {
       lastSegmentIdRef.current = segment.id
-      playBeep(760, 0.18)
+      playSignal(760, 0.4)
 
       if (segments.length > 1) {
         if (isEnteringLastWorkSegment(config, second)) {
@@ -316,9 +349,13 @@ function TimerPage() {
       }
     }
 
-    // Conto alla rovescia finale di ogni blocco
+    // Conto alla rovescia finale di ogni blocco: gli ultimi 3" piu' acuti/pieni.
     if (remaining > 0 && remaining <= FINAL_BEEP_SECONDS) {
-      playBeep(remaining <= 3 ? 990 : 700, remaining <= 3 ? 0.2 : 0.12)
+      if (remaining <= 3) {
+        playSignal(900, 0.3, { intensity: 1.05 })
+      } else {
+        playSignal(680, 0.24)
+      }
     }
   }
 
@@ -328,7 +365,8 @@ function TimerPage() {
     setStatus('done')
     setElapsed(totalSeconds)
     setRingFraction(1)
-    playBeep(1180, 0.5)
+    // Corno di fine: lungo e corposo.
+    playSignal(520, 1.2, { intensity: 1.2, attack: 0.03 })
     speak('Time')
     void releaseWakeLock()
   }
@@ -398,17 +436,20 @@ function TimerPage() {
       setPrepRemaining(remaining)
       setRingFraction(Math.min(1, passedFloat / PREP_SECONDS))
 
-      // I beep scattano una sola volta per secondo (l'intervallo gira a 200ms).
+      // Ogni secondo scatta una sola volta (l'intervallo gira a 200ms).
+      // Countdown vocale "three-two-one" sugli ultimi 3 secondi.
       if (remaining !== prevPrepSecondRef.current) {
         prevPrepSecondRef.current = remaining
-        if (remaining <= 3 && remaining >= 1) {
-          playBeep(700, 0.14)
+        const numberWord: Record<number, string> = { 3: 'three', 2: 'two', 1: 'one' }
+        if (numberWord[remaining]) {
+          speak(numberWord[remaining])
         }
       }
 
       if (remaining <= 0) {
         clearTick()
-        playBeep(1050, 0.25)
+        // Segnale di via corposo dopo "three-two-one".
+        playSignal(660, 0.8, { intensity: 1.2, attack: 0.03 })
         startRunning(0)
       }
     }, 200)
