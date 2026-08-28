@@ -164,6 +164,21 @@ function SmartPrText({
   const hasSectionBreak = (segment: string) =>
     /^[ \t]*-(?:[ \t]*-)+[ \t]*$/m.test(segment)
 
+  // Inizio del blocco corrente: subito dopo l'ultimo separatore "- - - -"
+  // che precede la posizione data (o 0 se non ce ne sono). Serve per cercare
+  // il nome esercizio in tutto il blocco, non solo in una finestra fissa.
+  const sectionBreakPattern = /^[ \t]*-(?:[ \t]*-)+[ \t]*$/gm
+  const currentBlockStart = (upTo: number) => {
+    const precedingText = text.slice(0, upTo)
+    let blockStart = 0
+    sectionBreakPattern.lastIndex = 0
+    let breakMatch: RegExpExecArray | null
+    while ((breakMatch = sectionBreakPattern.exec(precedingText)) !== null) {
+      blockStart = breakMatch.index + breakMatch[0].length
+    }
+    return blockStart
+  }
+
   const renderTextWithLineBreaks = (value: string, keyPrefix: string) =>
     value.split('\n').flatMap((segment, segmentIndex, array) =>
       segmentIndex === array.length - 1
@@ -194,7 +209,11 @@ function SmartPrText({
       )
     }
 
-    const surroundingText = text.slice(Math.max(0, start - 50), start)
+    // Cerca il nome nell'intero blocco corrente (dall'ultimo separatore fino
+    // alla percentuale): note lunghe tra nome e percentuale
+    // (es. "Bench Press (2\" stop al petto + 3\" in salita)") spingevano il
+    // nome oltre gli storici 50 caratteri e il carico non veniva piu' calcolato.
+    const surroundingText = text.slice(currentBlockStart(start), start)
     const freshExerciseName =
       findExerciseNameInText(surroundingText) || findExerciseNameInText(rawMatch)
     const canReuseCurrentExercise =
