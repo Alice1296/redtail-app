@@ -987,28 +987,50 @@ export function parseWorkoutText(workoutText: string): WorkoutParseResult {
     }
   }
 
-  // Espansione dei blocchi a set ripetuti: "AMRAP 4' x 3 Sets" con un eventuale
-  // rest subito dopo ("-2' Rest b/S-") diventa 3 blocchi AMRAP intervallati da 2
-  // rest, cosi il timer crea davvero i 3 AMRAP separati dal recupero.
+  // Espansione dei blocchi a set ripetuti verso una sequenza di blocchi singoli:
+  //  - "AMRAP 4' x 3 Sets": sempre 3 blocchi AMRAP (eventualmente intervallati
+  //    dal rest scritto subito dopo, es. "-2' Rest b/S-").
+  //  - "Every 6' x 3 Sets" con un rest subito dopo ("2' Rest b/s"): 3 blocchi di
+  //    lavoro da 6' separati dal recupero. Senza rest resta un EMOM classico
+  //    (minuti consecutivi, espanso piu' avanti in workoutTextToWodConfig).
   const blocks: ParsedWorkoutBlock[] = []
 
   for (let index = 0; index < rawBlocks.length; index += 1) {
     const block = rawBlocks[index]
+    const next = rawBlocks[index + 1]
+    const betweenRest =
+      next && next.type === 'rest' && next.duration ? next : null
 
-    if (block.type === 'amrap' && block.duration && block.sets && block.sets > 1) {
-      const next = rawBlocks[index + 1]
-      const betweenRest =
-        next && next.type === 'rest' && next.duration ? next : null
+    const perSetWorkSeconds =
+      block.type === 'amrap'
+        ? block.duration || 0
+        : block.type === 'emom' && block.interval
+          ? Math.round(block.interval * 60)
+          : 0
 
-      for (let set = 1; set <= block.sets; set += 1) {
+    const shouldExpand =
+      !!block.sets &&
+      block.sets > 1 &&
+      perSetWorkSeconds > 0 &&
+      // L'AMRAP a set si espande sempre; l'EMOM/"Every" solo se c'e' un rest
+      // esplicito tra i set (altrimenti e' un EMOM classico a minuti consecutivi).
+      (block.type === 'amrap' || (block.type === 'emom' && Boolean(betweenRest)))
+
+    if (shouldExpand) {
+      const sets = block.sets as number
+
+      for (let set = 1; set <= sets; set += 1) {
         blocks.push({
-          type: 'amrap',
-          duration: block.duration,
-          label: `AMRAP ${formatTimerDuration(block.duration)} (${set}/${block.sets})`,
+          type: block.type,
+          duration: perSetWorkSeconds,
+          interval: block.type === 'emom' ? block.interval : undefined,
+          label: `${
+            block.type === 'amrap' ? 'AMRAP' : 'Lavoro'
+          } ${formatTimerDuration(perSetWorkSeconds)} (${set}/${sets})`,
           rawText: block.rawText,
         })
 
-        if (betweenRest && set < block.sets) {
+        if (betweenRest && set < sets) {
           blocks.push({
             type: 'rest',
             duration: betweenRest.duration,
@@ -1033,13 +1055,17 @@ export function parseWorkoutText(workoutText: string): WorkoutParseResult {
   let emomCount = 0
   let restCount = 0
   let totalSeconds = 0
-  let emomWithoutSets = false
+  // La struttura "senza set" si valuta sui blocchi originali: dopo l'espansione
+  // i singoli blocchi non portano piu' il conteggio dei set ma la struttura e'
+  // comunque nota.
+  const emomWithoutSets = rawBlocks.some(
+    (block) => block.type === 'emom' && !block.sets
+  )
 
   for (const block of blocks) {
     if (block.type === 'amrap') amrapCount++
     if (block.type === 'emom') emomCount++
     if (block.type === 'rest') restCount++
-    if (block.type === 'emom' && !block.sets) emomWithoutSets = true
 
     if (block.duration) {
       totalSeconds += block.duration
