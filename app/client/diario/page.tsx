@@ -251,31 +251,45 @@ export default function ClientDiarioPage() {
                   {[...active.points].reverse().map((p, i, arr) => {
                     const older = arr[i + 1]
                     const diff = older ? Math.round((p.load - older.load) * 10) / 10 : null
+                    const schema =
+                      p.sets != null && p.reps != null
+                        ? `${p.sets}×${p.reps}`
+                        : p.reps != null
+                          ? `${p.reps} reps`
+                          : null
                     return (
                       <div
                         key={`${p.week}-${p.day}-${i}`}
-                        className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5"
+                        className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5"
                       >
-                        <span className="text-[11px] font-bold text-zinc-400 tabular-nums">
-                          W{p.week} · {DAY_LABEL.get(p.day) || p.day}
-                        </span>
-                        <span className="text-[13px] font-black tabular-nums">
-                          {formatKg(p.load)} kg
-                          {p.reps != null && (
-                            <span className="text-[10px] text-zinc-500 font-semibold"> × {p.reps}</span>
-                          )}
-                        </span>
-                        <span
-                          className={`text-[10px] font-black tabular-nums ${
-                            diff != null && diff > 0
-                              ? 'text-green-400'
-                              : diff != null && diff < 0
-                                ? 'text-red-400'
-                                : 'text-zinc-600'
-                          }`}
-                        >
-                          {diff == null ? '—' : diff === 0 ? '=' : `${diff > 0 ? '+' : ''}${formatKg(diff)}`}
-                        </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-zinc-400 tabular-nums">
+                            W{p.week} · {DAY_LABEL.get(p.day) || p.day}
+                          </span>
+                          <span className="text-[13px] font-black tabular-nums">
+                            {formatKg(p.load)} kg
+                            {schema && (
+                              <span className="text-[10px] text-zinc-500 font-semibold"> · {schema}</span>
+                            )}
+                            {p.rpe != null && (
+                              <span className="text-[10px] text-zinc-500 font-semibold"> · RPE {formatKg(p.rpe)}</span>
+                            )}
+                          </span>
+                          <span
+                            className={`text-[10px] font-black tabular-nums ${
+                              diff != null && diff > 0
+                                ? 'text-green-400'
+                                : diff != null && diff < 0
+                                  ? 'text-red-400'
+                                  : 'text-zinc-600'
+                            }`}
+                          >
+                            {diff == null ? '—' : diff === 0 ? '=' : `${diff > 0 ? '+' : ''}${formatKg(diff)}`}
+                          </span>
+                        </div>
+                        {p.notes && (
+                          <div className="mt-1 text-[10px] text-zinc-500 font-semibold italic">{p.notes}</div>
+                        )}
                       </div>
                     )
                   })}

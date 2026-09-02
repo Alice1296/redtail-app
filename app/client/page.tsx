@@ -1215,7 +1215,6 @@ function ClientPage() {
   function openDiario() {
     const detected = extractDayExercises(
       (workout?.strength as string) || '',
-      (workout?.wod as string) || '',
       prValues as unknown as MaxMap
     ).map((entry) => {
       // sovrapponi i valori gia' salvati per quell'esercizio
@@ -1224,8 +1223,10 @@ function ClientPage() {
         ? {
             ...entry,
             load: saved.load ?? entry.load ?? null,
+            sets: saved.sets ?? entry.sets ?? null,
             reps: saved.reps ?? entry.reps ?? null,
             rpe: saved.rpe ?? entry.rpe ?? null,
+            notes: saved.notes ?? entry.notes ?? null,
           }
         : entry
     })
@@ -1241,8 +1242,10 @@ function ClientPage() {
           exercise: payload.exercise,
           prescribed: payload.prescribed,
           load: payload.load ?? null,
+          sets: payload.sets ?? null,
           reps: payload.reps ?? null,
           rpe: payload.rpe ?? null,
+          notes: payload.notes ?? null,
           source: (payload.source as ExerciseSource) || 'custom',
         })
       }
@@ -1296,11 +1299,20 @@ function ClientPage() {
         .from('client_logs')
         .upsert(rows, { onConflict: 'client_id,week_number,day,section' })
 
-      if (error) throw error
+      if (error) {
+        // Supabase restituisce un oggetto errore (non un Error): mostra il messaggio reale.
+        const detail = [error.message, error.details, error.hint]
+          .filter(Boolean)
+          .join(' — ')
+        console.error('Errore salvataggio diario:', error)
+        setDiarioMsg(detail || 'Errore salvataggio')
+        return
+      }
 
       setDiarioMsg(`Salvati ${toSave.length} carichi nel diario`)
       await loadData(user.id)
     } catch (err: unknown) {
+      console.error('Errore salvataggio diario:', err)
       setDiarioMsg(err instanceof Error ? err.message : 'Errore salvataggio')
     } finally {
       setDiarioSaving(false)
@@ -1728,6 +1740,13 @@ function ClientPage() {
           className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:border-red-600 hover:text-red-400 transition-all"
         >
           Massimali
+        </button>
+        <button
+          onClick={() => router.push('/client/diario')}
+          className="col-span-2 flex items-center justify-center gap-2 bg-red-600/10 border border-red-600 text-red-400 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-red-600/20 transition-all"
+        >
+          <span className="w-2 h-2 rounded-full bg-red-600" />
+          Diario · progressi carichi
         </button>
         <button
           onClick={() => openTimer(false)}
@@ -2247,15 +2266,27 @@ function ClientPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <label className="bg-black border border-zinc-800 rounded-xl p-2 focus-within:border-red-600 block">
                       <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">
-                        Carico kg
+                        Carico
                       </span>
                       <input
                         inputMode="decimal"
                         value={entry.load ?? ''}
                         onChange={(e) => updateDiarioEntry(index, { load: parseDiarioNumber(e.target.value) })}
+                        placeholder="kg"
+                        className="w-full bg-transparent text-base font-black text-white outline-none tabular-nums placeholder:text-zinc-700"
+                      />
+                    </label>
+                    <label className="bg-black border border-zinc-800 rounded-xl p-2 focus-within:border-red-600 block">
+                      <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                        Serie
+                      </span>
+                      <input
+                        inputMode="numeric"
+                        value={entry.sets ?? ''}
+                        onChange={(e) => updateDiarioEntry(index, { sets: parseDiarioNumber(e.target.value) })}
                         placeholder="—"
                         className="w-full bg-transparent text-base font-black text-white outline-none tabular-nums placeholder:text-zinc-700"
                       />
@@ -2285,6 +2316,13 @@ function ClientPage() {
                       />
                     </label>
                   </div>
+
+                  <input
+                    value={entry.notes ?? ''}
+                    onChange={(e) => updateDiarioEntry(index, { notes: e.target.value })}
+                    placeholder={'Note (es. TUT 2" in buca 3" in salita)...'}
+                    className="w-full bg-black border border-zinc-800 rounded-xl p-2.5 text-xs text-zinc-200 outline-none focus:border-red-600 placeholder:text-zinc-700"
+                  />
                 </div>
               ))}
             </div>
