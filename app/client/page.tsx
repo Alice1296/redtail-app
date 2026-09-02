@@ -27,6 +27,17 @@ import {
   type WodTimerSegment,
 } from '@/lib/community'
 import {
+  extractDayExercises,
+  decodeEntry,
+  encodeEntry,
+  sectionForExercise,
+  isDiarioSection,
+  formatKg,
+  type TrainingLogEntry,
+  type ExerciseSource,
+  type MaxMap,
+} from '@/lib/trainingLog'
+import {
   generateWorkoutPdf,
   parseWorkoutRowForExport,
   type ExportSectionKey,
@@ -631,6 +642,12 @@ function ClientPage() {
   const recorderCancelRef = useRef(false)
   const recorderPreviewRef = useRef<HTMLVideoElement | null>(null)
 
+  // Diario carichi
+  const [diarioOpen, setDiarioOpen] = useState(false)
+  const [diarioEntries, setDiarioEntries] = useState<TrainingLogEntry[]>([])
+  const [diarioSaving, setDiarioSaving] = useState(false)
+  const [diarioMsg, setDiarioMsg] = useState('')
+
   // Visual Flash State
   const [isFlashing, setIsFlashing] = useState(false)
   const triggerFlash = () => {
@@ -1185,6 +1202,109 @@ function ClientPage() {
     )
 
     loadData(user.id)
+  }
+
+  // ---- Diario carichi ----------------------------------------------------
+  function parseDiarioNumber(value: string): number | null {
+    const cleaned = value.replace(',', '.').trim()
+    if (!cleaned) return null
+    const parsed = Number(cleaned)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  function openDiario() {
+    const detected = extractDayExercises(
+      (workout?.strength as string) || '',
+      (workout?.wod as string) || '',
+      prValues as unknown as MaxMap
+    ).map((entry) => {
+      // sovrapponi i valori gia' salvati per quell'esercizio
+      const saved = decodeEntry(logs[sectionForExercise(entry.exercise)]?.notes)
+      return saved
+        ? {
+            ...entry,
+            load: saved.load ?? entry.load ?? null,
+            reps: saved.reps ?? entry.reps ?? null,
+            rpe: saved.rpe ?? entry.rpe ?? null,
+          }
+        : entry
+    })
+
+    // voci diario gia' salvate ma non piu' rilevate dalla scheda
+    const detectedSections = new Set(detected.map((e) => sectionForExercise(e.exercise)))
+    const extra: TrainingLogEntry[] = []
+    Object.entries(logs).forEach(([section, log]) => {
+      if (!isDiarioSection(section) || detectedSections.has(section)) return
+      const payload = decodeEntry(log?.notes)
+      if (payload) {
+        extra.push({
+          exercise: payload.exercise,
+          prescribed: payload.prescribed,
+          load: payload.load ?? null,
+          reps: payload.reps ?? null,
+          rpe: payload.rpe ?? null,
+          source: (payload.source as ExerciseSource) || 'custom',
+        })
+      }
+    })
+
+    setDiarioEntries([...detected, ...extra])
+    setDiarioMsg('')
+    setDiarioOpen(true)
+  }
+
+  function updateDiarioEntry(index: number, patch: Partial<TrainingLogEntry>) {
+    setDiarioEntries((current) =>
+      current.map((entry, i) => (i === index ? { ...entry, ...patch } : entry))
+    )
+  }
+
+  function removeDiarioEntry(index: number) {
+    setDiarioEntries((current) => current.filter((_, i) => i !== index))
+  }
+
+  function addDiarioEntry() {
+    setDiarioEntries((current) => [
+      ...current,
+      { exercise: '', source: 'custom', load: null, reps: null, rpe: null },
+    ])
+  }
+
+  async function saveDiario() {
+    if (!user) return
+    const toSave = diarioEntries.filter(
+      (entry) => entry.exercise.trim() && entry.load != null && Number.isFinite(entry.load)
+    )
+
+    if (toSave.length === 0) {
+      setDiarioMsg('Inserisci almeno un carico')
+      return
+    }
+
+    try {
+      setDiarioSaving(true)
+      const rows = toSave.map((entry) => ({
+        client_id: user.id,
+        week_number: Number(week),
+        day: activeDay,
+        section: sectionForExercise(entry.exercise),
+        notes: encodeEntry(entry),
+        video_urls: null,
+      }))
+
+      const { error } = await supabase
+        .from('client_logs')
+        .upsert(rows, { onConflict: 'client_id,week_number,day,section' })
+
+      if (error) throw error
+
+      setDiarioMsg(`Salvati ${toSave.length} carichi nel diario`)
+      await loadData(user.id)
+    } catch (err: unknown) {
+      setDiarioMsg(err instanceof Error ? err.message : 'Errore salvataggio')
+    } finally {
+      setDiarioSaving(false)
+    }
   }
 
   async function saveScore() {
@@ -1970,6 +2090,22 @@ function ClientPage() {
                   </div>
                 )
             })}
+
+            <div className="bg-zinc-900 rounded-3xl border border-zinc-800 p-4 flex flex-col gap-2">
+              <button
+                onClick={openDiario}
+                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-red-600 bg-red-600/10 p-4 text-[11px] font-black uppercase italic tracking-widest text-red-400 active:scale-95 transition-all hover:bg-red-600/20"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-red-600" />
+                Diario · registra carichi
+              </button>
+              <button
+                onClick={() => router.push('/client/diario')}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-[10px] font-black uppercase tracking-widest text-zinc-300 active:scale-95 transition-all hover:border-red-600 hover:text-red-400"
+              >
+                Vedi i progressi →
+              </button>
+            </div>
           </>
         ) : (
           <div className="text-center py-20 text-zinc-600 font-black uppercase italic border border-dashed border-zinc-800 rounded-3xl">
@@ -2029,6 +2165,158 @@ function ClientPage() {
             <p className="text-center text-[10px] font-bold text-zinc-500">
               Il video viene caricato in automatico allo stop.
             </p>
+          </div>
+        </div>
+      )}
+
+      {diarioOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 sm:p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-zinc-800 bg-zinc-900 p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-red-500">
+                  Diario · {activeDay}
+                </p>
+                <h2 className="text-lg font-black uppercase italic text-white">
+                  Registra i carichi
+                </h2>
+              </div>
+              <button
+                onClick={() => setDiarioOpen(false)}
+                aria-label="Chiudi diario"
+                className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-sm font-black text-zinc-400 hover:text-white"
+              >
+                X
+              </button>
+            </div>
+
+            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wide leading-relaxed">
+              Esercizi letti dall&apos;allenamento. Verde = calcolato dal massimale, giallo =
+              da scheda. Inserisci carico e reps reali.
+            </p>
+
+            {diarioEntries.length === 0 && (
+              <p className="text-center text-zinc-600 text-xs font-black uppercase py-6">
+                Nessun esercizio rilevato — aggiungine uno.
+              </p>
+            )}
+
+            <div className="space-y-3">
+              {diarioEntries.map((entry, index) => (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <input
+                        value={entry.exercise}
+                        onChange={(e) => updateDiarioEntry(index, { exercise: e.target.value })}
+                        placeholder="Nome esercizio"
+                        className="w-full bg-transparent text-sm font-black text-white outline-none border-b border-transparent focus:border-red-600 placeholder:text-zinc-700"
+                      />
+                      {entry.prescribed && (
+                        <div className="text-[10px] text-zinc-500 font-semibold mt-1">
+                          {entry.prescribed}
+                          {entry.source === 'wod' ? ' · WOD' : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-none">
+                      {entry.suggestedLoad != null ? (
+                        <button
+                          type="button"
+                          onClick={() => updateDiarioEntry(index, { load: entry.suggestedLoad })}
+                          className="rounded-md border border-green-600/40 bg-green-600/10 px-2 py-1 text-[9px] font-black uppercase text-green-300"
+                        >
+                          → {formatKg(entry.suggestedLoad)} kg
+                        </button>
+                      ) : entry.source && entry.source !== 'custom' ? (
+                        <span className="rounded-md border border-yellow-600/40 bg-yellow-600/10 px-2 py-1 text-[9px] font-black uppercase text-yellow-300">
+                          da scheda
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => removeDiarioEntry(index)}
+                        aria-label="Rimuovi esercizio"
+                        className="text-zinc-600 hover:text-red-500 text-sm font-black px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="bg-black border border-zinc-800 rounded-xl p-2 focus-within:border-red-600 block">
+                      <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                        Carico kg
+                      </span>
+                      <input
+                        inputMode="decimal"
+                        value={entry.load ?? ''}
+                        onChange={(e) => updateDiarioEntry(index, { load: parseDiarioNumber(e.target.value) })}
+                        placeholder="—"
+                        className="w-full bg-transparent text-base font-black text-white outline-none tabular-nums placeholder:text-zinc-700"
+                      />
+                    </label>
+                    <label className="bg-black border border-zinc-800 rounded-xl p-2 focus-within:border-red-600 block">
+                      <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                        Reps
+                      </span>
+                      <input
+                        inputMode="numeric"
+                        value={entry.reps ?? ''}
+                        onChange={(e) => updateDiarioEntry(index, { reps: parseDiarioNumber(e.target.value) })}
+                        placeholder="—"
+                        className="w-full bg-transparent text-base font-black text-white outline-none tabular-nums placeholder:text-zinc-700"
+                      />
+                    </label>
+                    <label className="bg-black border border-zinc-800 rounded-xl p-2 focus-within:border-red-600 block">
+                      <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                        RPE
+                      </span>
+                      <input
+                        inputMode="decimal"
+                        value={entry.rpe ?? ''}
+                        onChange={(e) => updateDiarioEntry(index, { rpe: parseDiarioNumber(e.target.value) })}
+                        placeholder="—"
+                        className="w-full bg-transparent text-base font-black text-white outline-none tabular-nums placeholder:text-zinc-700"
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={addDiarioEntry}
+              className="w-full rounded-xl border border-dashed border-zinc-700 bg-zinc-800/40 p-3 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:border-red-600 hover:text-red-400 transition-all"
+            >
+              + Aggiungi esercizio
+            </button>
+
+            {diarioMsg && (
+              <p className="text-center text-[11px] font-black uppercase text-green-400">
+                {diarioMsg}
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setDiarioOpen(false)}
+                className="flex-1 rounded-2xl border border-zinc-700 bg-zinc-800 p-3 text-[10px] font-black uppercase tracking-widest text-zinc-300"
+              >
+                Chiudi
+              </button>
+              <button
+                onClick={saveDiario}
+                disabled={diarioSaving}
+                className="flex-[2] rounded-2xl bg-red-600 p-3 text-[11px] font-black uppercase italic tracking-widest text-white shadow-lg shadow-red-600/40 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {diarioSaving ? 'Salvataggio...' : 'Salva nel diario'}
+              </button>
+            </div>
           </div>
         </div>
       )}
