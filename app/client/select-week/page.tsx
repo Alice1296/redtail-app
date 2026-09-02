@@ -196,6 +196,14 @@ export default function SelectWeekPage() {
             </div>
 
             <button
+              onClick={() => router.push('/client/diario')}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-600 bg-red-600/10 px-5 py-4 text-[11px] font-black uppercase italic tracking-widest text-red-400 transition-all active:scale-[0.98] hover:bg-red-600/20"
+            >
+              <span className="h-2.5 w-2.5 rounded-full bg-red-600" />
+              Diario · progressi carichi
+            </button>
+
+            <button
               onClick={() => router.back()}
               className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all hover:border-red-600 hover:text-red-400"
             >

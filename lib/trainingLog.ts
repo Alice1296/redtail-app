@@ -170,7 +170,11 @@ function looksLikeExerciseTitle(line: string): boolean {
   if (!t || t.length > 60) return false
   if (/^[\d(]/.test(t)) return false
   if (!/[a-zA-Zà-ù]/.test(t)) return false
-  if (/^(then|amrap|emom|for time|rest|riposo|max|note|nota|varianti|oppure)\b/i.test(t)) {
+  if (
+    /^(then|amrap|emom|for time|rest|riposo|max|note|nota|varianti|oppure|gym|warm[\s-]?up|riscaldamento|cool[\s-]?down|defaticamento|mobility|superset|circuito)\b/i.test(
+      t
+    )
+  ) {
     return false
   }
   return true
